@@ -1,6 +1,12 @@
-import { deleteEntity, handler, HttpError, query, readJson, requireEditor, saveEntity, send } from '../server/core.js'
+import { deleteEntity, handler, HttpError, listDeleted, query, readJson, requireEditor, requireReader, saveEntity, send } from '../server/core.js'
 
 export default handler({
+  /** ?deleted=1 lists soft-deleted items so they can be restored. */
+  GET: async (req, res) => {
+    requireReader(req)
+    if (query(req, 'deleted') !== '1') throw new HttpError(400, 'Unsupported query')
+    send(res, 200, { entities: await listDeleted() })
+  },
   POST: async (req, res) => {
     requireEditor(req)
     const body = await readJson<{ entity?: unknown; baseUpdatedAt?: string; note?: string; action?: 'restore' }>(req)

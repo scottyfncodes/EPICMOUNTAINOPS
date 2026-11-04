@@ -1,8 +1,9 @@
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless'
-import { createHash, timingSafeEqual } from 'node:crypto'
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { SEED_VERSION, seedEntities } from '../shared/seed.js'
-import type { Entity, EntityType, ImageMeta, VersionRecord } from '../shared/types.js'
+import type { Entity, ImageMeta, VersionRecord } from '../shared/types.js'
+import { ID_RE, validateEntityShape, ValidationError, verificationProblem } from '../shared/validate.js'
 
 /* ------------------------------------------------------------------ */
 /* HTTP helpers (plain Node req/res — works on Vercel and in Vite dev) */
@@ -19,6 +20,7 @@ export class HttpError extends Error {
 export function send(res: Res, status: number, body: unknown, headers: Record<string, string> = {}) {
   res.statusCode = status
   res.setHeader('Content-Type', 'application/json; charset=utf-8')
+  res.setHeader('X-Content-Type-Options', 'nosniff')
   if (!headers['Cache-Control']) res.setHeader('Cache-Control', 'no-store')
   for (const [k, v] of Object.entries(headers)) res.setHeader(k, v)
   res.end(JSON.stringify(body))
@@ -57,7 +59,7 @@ export function handler(methods: Record<string, (req: Req, res: Res) => Promise<
     try {
       await fn(req, res)
     } catch (err) {
-      const status = err instanceof HttpError ? err.status : 500
+      const status = err instanceof HttpError ? err.status : err instanceof ValidationError ? 400 : 500
       if (status >= 500) console.error('[api]', err)
       send(res, status, { error: status >= 500 ? 'Server error — your change was not saved.' : (err as Error).message })
     }
@@ -81,13 +83,50 @@ export function requireEditor(req: Req) {
   if (!keyMatches(Array.isArray(given) ? given[0] : given)) throw new HttpError(401, 'Edit key required or incorrect.')
 }
 
-/** Optional private mode: when OPS_PRIVATE=1 every read also needs the key. */
+/* Read session (private mode).
+ * Images can't send headers, so after a successful unlock the server sets an
+ * HttpOnly cookie holding an HMAC derived from the key (never the key itself).
+ * Rotating OPS_EDIT_KEY invalidates every outstanding session automatically. */
+export const READ_COOKIE = 'ops_read'
+
+export function readToken(): string | null {
+  const key = process.env.OPS_EDIT_KEY
+  return key ? createHmac('sha256', key).update('ops-read-session-v1').digest('base64url') : null
+}
+
+function cookie(req: Req, name: string): string | undefined {
+  const raw = req.headers.cookie
+  if (!raw) return undefined
+  for (const part of raw.split(';')) {
+    const [k, ...v] = part.trim().split('=')
+    if (k === name) return decodeURIComponent(v.join('='))
+  }
+  return undefined
+}
+
+export function hasReadSession(req: Req): boolean {
+  const expected = readToken()
+  const given = cookie(req, READ_COOKIE)
+  if (!expected || !given) return false
+  return timingSafeEqual(hash(given), hash(expected))
+}
+
+export function readCookieHeader(clear = false): string {
+  const secure = process.env.VERCEL ? '; Secure' : ''
+  return clear
+    ? `${READ_COOKIE}=; Path=/api; HttpOnly; SameSite=Strict; Max-Age=0${secure}`
+    : `${READ_COOKIE}=${readToken()}; Path=/api; HttpOnly; SameSite=Strict; Max-Age=15552000${secure}`
+}
+
+export const isPrivate = () => process.env.OPS_PRIVATE === '1'
+
+/** Optional private mode: when OPS_PRIVATE=1 every read needs the key or a read session. */
 export function requireReader(req: Req) {
-  if (process.env.OPS_PRIVATE !== '1') return
+  if (!isPrivate()) return
   const header = req.headers['x-ops-key']
-  // <img> tags cannot send headers, so the key may also arrive as ?k=
-  const given = (Array.isArray(header) ? header[0] : header) || query(req, 'k')
-  if (!keyMatches(given)) throw new HttpError(401, 'This atlas is private. Enter your key.')
+  if (keyMatches(Array.isArray(header) ? header[0] : header)) return
+  if (hasReadSession(req)) return
+  throw new HttpError(401, 'This atlas is private. Enter your key.')
 }
 
 /* ------------------------------------------------------------------ */
@@ -173,9 +212,6 @@ export function ensureReady(): Promise<void> {
 /* ------------------------------------------------------------------ */
 /* Entities                                                           */
 /* ------------------------------------------------------------------ */
-const TYPES: EntityType[] = ['department', 'workflow', 'system', 'equipment', 'glossary', 'note', 'source']
-const STATUSES = ['verified', 'observed', 'unverified', 'outdated']
-const ID_RE = /^[a-z0-9][a-z0-9_-]{0,79}$/i
 
 export async function listEntities(): Promise<Entity[]> {
   await ensureReady()
@@ -197,22 +233,18 @@ export async function listImages(): Promise<ImageMeta[]> {
   }))
 }
 
-function validate(input: any): Entity {
-  if (!input || typeof input !== 'object') throw new HttpError(400, 'Missing entity')
-  if (!TYPES.includes(input.type)) throw new HttpError(400, 'Unknown entity type')
-  if (typeof input.id !== 'string' || !ID_RE.test(input.id)) throw new HttpError(400, 'Invalid id')
-  if (typeof input.title !== 'string' || !input.title.trim()) throw new HttpError(400, 'A title is required')
-  if (input.title.length > 300) throw new HttpError(400, 'Title is too long')
-  if (!STATUSES.includes(input.status)) throw new HttpError(400, 'Invalid status')
-  const size = JSON.stringify(input).length
-  if (size > 1_000_000) throw new HttpError(413, 'Entity is too large')
-  return input as Entity
-}
 
 export async function saveEntity(raw: unknown, opts: { baseUpdatedAt?: string; note?: string; action?: 'restore' }): Promise<Entity> {
   await ensureReady()
-  const entity = validate(raw)
+  const entity = validateEntityShape(raw)
   const sql = db()
+  if (entity.status === 'verified' && entity.type !== 'source' && !entity.source?.trim()) {
+    const ids = entity.sourceIds || []
+    const rows = ids.length ? await sql.query(`SELECT id, data FROM entities WHERE id = ANY($1) AND type = 'source' AND deleted_at IS NULL`, [ids]) : []
+    const byId = new Map(rows.map((r: any) => [r.id, r.data]))
+    const problem = verificationProblem(entity, (id) => byId.get(id))
+    if (problem) throw new ValidationError(problem)
+  }
   const existing = await sql.query(`SELECT data, deleted_at FROM entities WHERE id = $1`, [entity.id])
   const now = new Date().toISOString()
   const prev = existing[0] as { data: Entity; deleted_at: string | null } | undefined
@@ -226,6 +258,8 @@ export async function saveEntity(raw: unknown, opts: { baseUpdatedAt?: string; n
     ...entity,
     createdAt: prev?.data.createdAt ?? entity.createdAt ?? now,
     updatedAt: now,
+    // Revision number shown in the document-control block (seed content is rev 1).
+    rev: prev ? (prev.data.rev ?? 1) + 1 : 1,
   }
   // Verification can only be set deliberately; stamp the date when it is.
   if (next.status === 'verified' && (!prev || prev.data.status !== 'verified')) next.lastVerifiedAt = now
@@ -257,6 +291,13 @@ export async function deleteEntity(id: string): Promise<void> {
     sql.query(`UPDATE entities SET deleted_at = now() WHERE id = $1`, [id]),
     sql.query(`INSERT INTO entity_versions (entity_id, action, data) VALUES ($1, 'delete', $2)`, [id, JSON.stringify((rows[0] as any).data)]),
   ])
+}
+
+/** Soft-deleted items, newest first — so deletes can be undone from the Review screen. */
+export async function listDeleted(): Promise<(Entity & { deletedAt: string })[]> {
+  await ensureReady()
+  const rows = await db().query(`SELECT data, deleted_at FROM entities WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 200`)
+  return rows.map((r: any) => ({ ...(r.data as Entity), deletedAt: new Date(r.deleted_at).toISOString() }))
 }
 
 export async function listVersions(id: string): Promise<VersionRecord[]> {

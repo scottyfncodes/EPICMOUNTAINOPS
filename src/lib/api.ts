@@ -65,16 +65,13 @@ export const api = {
   versions: (id: string) => request<{ versions: VersionRecord[] }>(`/api/versions?id=${encodeURIComponent(id)}`).then((r) => r.versions),
   uploadImage: (payload: { dataUrl: string; width: number; height: number; caption?: string }) =>
     request<{ image: ImageMeta }>('/api/images', { method: 'POST', body: JSON.stringify(payload) }).then((r) => r.image),
+  lockSession: () => fetch('/api/auth', { method: 'DELETE' }).then((r) => r.json().catch(() => null)),
+  session: () => fetch('/api/auth').then((r) => r.json() as Promise<{ private: boolean; session: boolean; editingConfigured: boolean }>),
+  deleted: () => request<{ entities: (Entity & { deletedAt: string })[] }>('/api/entities?deleted=1').then((r) => r.entities),
   captionImage: (id: string, caption: string) => request('/api/images', { method: 'PATCH', body: JSON.stringify({ id, caption }) }),
 }
 
-/** Set when the server runs in private mode (reads need the key). */
-let privateMode = false
-export const setPrivateMode = (v: boolean) => {
-  privateMode = v
-}
-
 export function imageUrl(id: string) {
-  const k = privateMode && sessionKey ? `&k=${encodeURIComponent(sessionKey)}` : ''
-  return `/api/images?id=${encodeURIComponent(id)}${k}`
+  // Private mode is handled by an HttpOnly read-session cookie, so the key never appears in URLs.
+  return `/api/images?id=${encodeURIComponent(id)}`
 }

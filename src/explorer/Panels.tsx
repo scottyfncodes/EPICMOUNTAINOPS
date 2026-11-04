@@ -1,12 +1,14 @@
 import { Link, useNavigate } from 'react-router-dom'
-import type { EdgeKind, FlowEdge, FlowNode, Workflow } from '../../shared/types'
+import type { EdgeKind, FlowEdge, FlowNode, NodeKind, Workflow } from '../../shared/types'
 import { FormFields, NODE_SCHEMA } from '../components/Forms'
 import { Icon } from '../components/Icon'
 import { ImageGallery } from '../components/Images'
-import { Field, IllustrativeBanner, Meta, NodeGlyph, RefChip, RefChips, RichText, SourceLine, StatusBadge } from '../components/ui'
-import { ACCENTS, hrefFor, NODE_META } from '../lib/meta'
+import { Field, IllustrativeBanner, NodeGlyph, RefChip, RefChips, RichText, SourceLine, StatusBadge } from '../components/ui'
+import { ACCENTS, fmtDate, hrefFor, NODE_META } from '../lib/meta'
 import { useAtlas } from '../lib/store'
 import { NotesBox } from '../pages/Reference'
+import type { CameFrom } from './Explorer'
+import { effectiveStatus, stepGaps, systemsInWorkflow } from './routing'
 
 const NOT_CAPTURED: [keyof FlowNode, string][] = [
   ['what', 'What happens'],
@@ -17,16 +19,20 @@ const NOT_CAPTURED: [keyof FlowNode, string][] = [
   ['considerations', 'Considerations'],
 ]
 
+export const QUICK_LABELS = ['Yes', 'No', 'Pass', 'Fail', 'Walk-in', 'Reservation', 'Try again']
+
 export function NodeDetail({
   wf,
   node,
   onSelect,
   onEdit,
+  from,
 }: {
   wf: Workflow
   node: FlowNode
   onSelect: (id: string) => void
   onEdit?: () => void
+  from?: CameFrom
 }) {
   const atlas = useAtlas()
   const navigate = useNavigate()
@@ -37,6 +43,7 @@ export function NodeDetail({
   const targetDept = target ? atlas.get(target.departmentIds[0]) : undefined
   const missing = node.kind === 'start' || node.kind === 'end' || node.kind === 'parallel' ? [] : NOT_CAPTURED.filter(([k]) => !node[k])
   const notes = atlas.notesFor('workflow', wf.id, node.id)
+  const st = effectiveStatus(node, wf)
 
   return (
     <div className="nodedetail">
@@ -44,27 +51,28 @@ export function NodeDetail({
         <div className={`banner banner--${node.kind === 'warning' ? 'warning' : 'unknown'}`} role="note">
           <Icon name={node.kind === 'warning' ? 'warning' : 'question'} size={18} />
           <div>
-            {node.kind === 'warning' ? (
-              <b>Important reminder.</b>
-            ) : (
-              <b>Unknown step.</b>
-            )}{' '}
+            <b>{node.kind === 'warning' ? 'Important reminder.' : 'Unknown step.'}</b>{' '}
             {node.kind === 'warning' ? 'Read before continuing.' : 'This is a gap in the map — capture it from an authorized source.'}
           </div>
         </div>
+      )}
+      {st.inherited && node.kind !== 'start' && node.kind !== 'end' && node.kind !== 'parallel' && (
+        <p className="inherit-note">
+          Status inherited from the workflow — this step hasn’t been reviewed on its own.
+        </p>
       )}
 
       {target && (
         <button
           className="handoff"
           style={{ '--accent': targetDept?.type === 'department' ? ACCENTS[targetDept.accent].color : 'var(--glacier)' } as React.CSSProperties}
-          onClick={() => navigate(hrefFor(target), { viewTransition: true })}
+          onClick={() => navigate(hrefFor(target), { viewTransition: true, state: { from } })}
         >
-          <span className="handoff__kicker">Continues in</span>
+          <span className="handoff__kicker">Continues in {targetDept?.type === 'department' ? targetDept.title : 'another workflow'}</span>
           <span className="handoff__title">
             <span className="mono">{target.code}</span> {target.title}
           </span>
-          <span className="handoff__dept">{targetDept?.title}</span>
+          <span className="handoff__dept">{target.summary}</span>
           <Icon name="arrowRight" size={20} />
         </button>
       )}
@@ -73,7 +81,7 @@ export function NodeDetail({
       <Field label="What happens">{node.what && <RichText text={node.what} />}</Field>
       <Field label="Why it happens">{node.why && <RichText text={node.why} />}</Field>
       <Field label="Who is responsible">{node.who && <RichText text={node.who} />}</Field>
-      {(node.systemIds?.length || node.equipmentIds?.length) ? (
+      {node.systemIds?.length || node.equipmentIds?.length ? (
         <Field label="Systems & equipment involved">
           <RefChips ids={[...(node.systemIds || []), ...(node.equipmentIds || [])]} />
         </Field>
@@ -100,7 +108,9 @@ export function NodeDetail({
               })}
             </div>
           ) : (
-            !node.next && <span className="muted">{node.kind === 'end' ? 'This is where the workflow finishes.' : node.kind === 'link' ? 'Continues in the linked workflow.' : 'Nothing connected yet.'}</span>
+            !node.next && (
+              <span className="muted">{node.kind === 'end' ? 'This is where the workflow finishes.' : node.kind === 'link' ? 'Continues in the linked workflow.' : 'Nothing connected yet.'}</span>
+            )
           )}
         </div>
       </div>
@@ -159,6 +169,9 @@ export function NodeDetail({
   )
 }
 
+const KINDS: NodeKind[] = ['step', 'decision', 'warning', 'unknown', 'link', 'parallel', 'start', 'end']
+const ESSENTIAL = new Set(['label', 'linkWorkflowId', 'status', 'what'])
+
 export function NodeEditor({
   wf,
   node,
@@ -167,38 +180,79 @@ export function NodeEditor({
   onConnect,
   onEdgeChange,
   onEdgeDelete,
+  onAddNext,
+  onDuplicate,
 }: {
   wf: Workflow
   node: FlowNode
-  onChange: (patch: Partial<FlowNode>) => void
+  onChange: (patch: Partial<FlowNode>, group?: string) => void
   onDelete: () => void
-  onConnect: (targetId: string) => void
-  onEdgeChange: (id: string, patch: Partial<FlowEdge>) => void
+  onConnect: (targetId: string, kind?: EdgeKind, label?: string) => void
+  onEdgeChange: (id: string, patch: Partial<FlowEdge>, group?: string) => void
   onEdgeDelete: (id: string) => void
+  onAddNext: (kind: NodeKind) => void
+  onDuplicate: () => void
 }) {
   const outgoing = wf.edges.filter((e) => e.source === node.id)
   const byId = new Map(wf.nodes.map((n) => [n.id, n]))
   const candidates = wf.nodes.filter((n) => n.id !== node.id && !outgoing.some((e) => e.target === n.id))
+  const essentials = NODE_SCHEMA.filter((f) => f.key && ESSENTIAL.has(f.key) && f.key !== 'kind')
+  const details = NODE_SCHEMA.filter((f) => f.key && !ESSENTIAL.has(f.key) && f.key !== 'kind')
+  const filled = details.filter((f) => {
+    const v = (node as any)[f.key!]
+    return Array.isArray(v) ? v.length : Boolean(v)
+  }).length
+  const change = (p: Record<string, any>) => onChange(p as Partial<FlowNode>, `node:${node.id}:${Object.keys(p)[0]}`)
+
   return (
     <div className="nodeeditor">
-      <FormFields schema={NODE_SCHEMA} value={node as any} onChange={(p) => onChange(p as Partial<FlowNode>)} hide={node.kind === 'link' ? [] : ['linkWorkflowId']} />
+      <div className="fi">
+        <span className="fi__label">Shape</span>
+        <div className="kindpick" role="radiogroup" aria-label="Step shape">
+          {KINDS.map((k) => (
+            <button key={k} type="button" role="radio" aria-checked={node.kind === k} className={`kindpick__opt ${node.kind === k ? 'is-on' : ''}`} onClick={() => onChange({ kind: k })}>
+              <NodeGlyph kind={k} size={14} />
+              <span>{NODE_META[k].label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+      <FormFields schema={essentials} value={node as any} onChange={change} hide={node.kind === 'link' ? [] : ['linkWorkflowId']} />
+
+      <details className="more" open={filled > 0}>
+        <summary>
+          More detail <span className="mono muted">{filled}/{details.length} filled</span>
+        </summary>
+        <FormFields schema={details} value={node as any} onChange={change} />
+      </details>
+
       <h3 className="form__heading">Connections out</h3>
-      <p className="fi__help">Drag from a step’s bottom handle to another step, or use the list below.</p>
       <ul className="edgelist">
         {outgoing.map((e) => (
           <li key={e.id} className="edgelist__item">
             <div className="edgelist__to">
               → <b>{byId.get(e.target)?.label ?? 'missing'}</b>
             </div>
+            <div className="quicklabels" role="group" aria-label="Quick labels">
+              {QUICK_LABELS.slice(0, 4).map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  className={`qchip ${e.label === q ? 'is-on' : ''}`}
+                  onClick={() => onEdgeChange(e.id, { label: e.label === q ? '' : q, kind: q === 'Yes' || q === 'Pass' ? 'yes' : q === 'No' || q === 'Fail' ? 'no' : e.kind })}
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
             <div className="row gap-s">
-              <input className="input input--compact" placeholder="Label (e.g. Yes)" value={e.label || ''} onChange={(ev) => onEdgeChange(e.id, { label: ev.target.value })} aria-label="Connection label" />
-              <select className="input input--compact" value={e.kind || 'normal'} onChange={(ev) => onEdgeChange(e.id, { kind: ev.target.value as EdgeKind })} aria-label="Connection type">
-                <option value="normal">Normal</option>
-                <option value="yes">Yes / pass</option>
-                <option value="no">No / fail</option>
-                <option value="branch">Branch / parallel</option>
-                <option value="loop">Loop back</option>
-              </select>
+              <input
+                className="input input--compact"
+                placeholder="Custom label"
+                value={e.label || ''}
+                onChange={(ev) => onEdgeChange(e.id, { label: ev.target.value }, `edge:${e.id}:label`)}
+                aria-label="Connection label"
+              />
               <button className="iconbtn" onClick={() => onEdgeDelete(e.id)} aria-label="Remove connection">
                 <Icon name="trash" size={16} />
               </button>
@@ -207,13 +261,8 @@ export function NodeEditor({
         ))}
       </ul>
       {candidates.length > 0 && (
-        <select
-          className="input"
-          value=""
-          onChange={(e) => e.target.value && onConnect(e.target.value)}
-          aria-label="Connect to another step"
-        >
-          <option value="">+ Connect to another step…</option>
+        <select className="input" value="" onChange={(e) => e.target.value && onConnect(e.target.value)} aria-label="Connect to another step">
+          <option value="">+ Connect to an existing step…</option>
           {candidates.map((n) => (
             <option key={n.id} value={n.id}>
               {NODE_META[n.kind].label}: {n.label}
@@ -221,6 +270,18 @@ export function NodeEditor({
           ))}
         </select>
       )}
+
+      <div className="editor-actions">
+        <button className="btn btn--ghost" onClick={() => onAddNext('step')}>
+          <Icon name="plus" size={16} /> Next step
+        </button>
+        <button className="btn btn--ghost" onClick={() => onAddNext('decision')}>
+          <Icon name="plus" size={16} /> Decision
+        </button>
+        <button className="btn btn--ghost" onClick={onDuplicate}>
+          <Icon name="layers" size={16} /> Duplicate
+        </button>
+      </div>
       <button className="btn btn--danger-ghost btn--block" onClick={onDelete}>
         <Icon name="trash" size={16} /> Delete this step
       </button>
@@ -228,31 +289,69 @@ export function NodeEditor({
   )
 }
 
-export function EdgeEditor({ wf, edge, onChange, onDelete }: { wf: Workflow; edge: FlowEdge; onChange: (p: Partial<FlowEdge>) => void; onDelete: () => void }) {
+export function EdgeEditor({
+  wf,
+  edge,
+  onChange,
+  onDelete,
+  onInsert,
+}: {
+  wf: Workflow
+  edge: FlowEdge
+  onChange: (p: Partial<FlowEdge>, group?: string) => void
+  onDelete: () => void
+  onInsert: (kind: NodeKind) => void
+}) {
   const s = wf.nodes.find((n) => n.id === edge.source)
   const t = wf.nodes.find((n) => n.id === edge.target)
   return (
     <div className="form">
-      <p>
-        <b>{s?.label}</b> → <b>{t?.label}</b>
+      <p className="edgeroute">
+        <NodeGlyph kind={s?.kind || 'step'} size={12} /> <b>{s?.label}</b>
+        <Icon name="arrowRight" size={16} />
+        <NodeGlyph kind={t?.kind || 'step'} size={12} /> <b>{t?.label}</b>
       </p>
-      <div className="fi">
-        <label className="fi__label" htmlFor="edge-label">
-          Label
-        </label>
-        <input id="edge-label" className="input" value={edge.label || ''} onChange={(e) => onChange({ label: e.target.value })} placeholder="e.g. Yes, No, Walk-in" />
+      <div className="editor-actions">
+        <button className="btn btn--primary" onClick={() => onInsert('step')}>
+          <Icon name="plus" size={16} /> Insert step here
+        </button>
+        <button className="btn btn--ghost" onClick={() => onInsert('decision')}>
+          Insert decision
+        </button>
       </div>
       <div className="fi">
-        <label className="fi__label" htmlFor="edge-kind">
-          Type
-        </label>
-        <select id="edge-kind" className="input" value={edge.kind || 'normal'} onChange={(e) => onChange({ kind: e.target.value as EdgeKind })}>
-          <option value="normal">Normal</option>
-          <option value="yes">Yes / pass</option>
-          <option value="no">No / fail</option>
-          <option value="branch">Branch / parallel</option>
-          <option value="loop">Loop back</option>
-        </select>
+        <span className="fi__label">Label</span>
+        <div className="quicklabels">
+          {QUICK_LABELS.map((q) => (
+            <button
+              key={q}
+              type="button"
+              className={`qchip ${edge.label === q ? 'is-on' : ''}`}
+              onClick={() => onChange({ label: edge.label === q ? '' : q, kind: q === 'Yes' || q === 'Pass' ? 'yes' : q === 'No' || q === 'Fail' ? 'no' : q === 'Try again' ? 'loop' : edge.kind })}
+            >
+              {q}
+            </button>
+          ))}
+        </div>
+        <input className="input" value={edge.label || ''} onChange={(e) => onChange({ label: e.target.value }, `edge:${edge.id}:label`)} placeholder="Or type a label" aria-label="Connection label" />
+      </div>
+      <div className="fi">
+        <span className="fi__label">Type</span>
+        <div className="seg" role="radiogroup" aria-label="Connection type">
+          {(
+            [
+              ['normal', 'Normal'],
+              ['yes', 'Yes / pass'],
+              ['no', 'No / fail'],
+              ['branch', 'Parallel'],
+              ['loop', 'Loop back'],
+            ] as [EdgeKind, string][]
+          ).map(([k, l]) => (
+            <button key={k} type="button" role="radio" aria-checked={(edge.kind || 'normal') === k} className={`seg__opt edgekind--${k} ${(edge.kind || 'normal') === k ? 'is-on' : ''}`} onClick={() => onChange({ kind: k })}>
+              {l}
+            </button>
+          ))}
+        </div>
       </div>
       <button className="btn btn--danger-ghost btn--block" onClick={onDelete}>
         <Icon name="trash" size={16} /> Remove connection
@@ -266,9 +365,52 @@ export function WorkflowInfo({ wf, onSelect }: { wf: Workflow; onSelect: (id: st
   const inbound = atlas.inboundLinks(wf.id)
   const outbound = wf.nodes.filter((n) => n.kind === 'link' && n.linkWorkflowId)
   const counts = wf.nodes.reduce<Record<string, number>>((a, n) => ((a[n.kind] = (a[n.kind] || 0) + 1), a), {})
+  const usedInSteps = systemsInWorkflow(wf).filter((s) => s.count > 0)
+  const flagged = wf.nodes.filter((n) => n.kind === 'unknown' || n.status === 'unverified' || n.status === 'outdated' || stepGaps(n).length)
+  const reviewedSteps = wf.nodes.filter((n) => n.status && n.status !== 'unverified').length
+  const source = wf.sourceIds?.map((id) => atlas.get(id)?.title).filter(Boolean).join(', ')
+
   return (
     <div className="wfinfo">
       <IllustrativeBanner entity={wf} />
+
+      <dl className="doccontrol" aria-label="Document control">
+        <div>
+          <dt>Document</dt>
+          <dd className="mono">{wf.code || '—'}</dd>
+        </div>
+        <div>
+          <dt>Revision</dt>
+          <dd className="mono">Rev {wf.rev ?? 1}</dd>
+        </div>
+        <div>
+          <dt>Status</dt>
+          <dd>
+            <StatusBadge status={wf.status} compact />
+          </dd>
+        </div>
+        <div>
+          <dt>Last verified</dt>
+          <dd>{wf.lastVerifiedAt ? fmtDate(wf.lastVerifiedAt) : 'Never'}</dd>
+        </div>
+        <div>
+          <dt>Updated</dt>
+          <dd>{fmtDate(wf.updatedAt)}</dd>
+        </div>
+        <div>
+          <dt>Steps reviewed</dt>
+          <dd className="mono">
+            {reviewedSteps}/{wf.nodes.length}
+          </dd>
+        </div>
+        {source && (
+          <div className="doccontrol__wide">
+            <dt>Source</dt>
+            <dd>{source}</dd>
+          </div>
+        )}
+      </dl>
+
       {wf.summary && (
         <div className="lede lede--small">
           <RichText text={wf.summary} />
@@ -284,15 +426,32 @@ export function WorkflowInfo({ wf, onSelect }: { wf: Workflow; onSelect: (id: st
           <p>{wf.outcome || <span className="muted">Not captured</span>}</p>
         </div>
       </div>
+
+      <div className="glance" aria-label="At a glance">
+        {(['step', 'decision', 'warning', 'unknown', 'link'] as NodeKind[]).map((k) => (
+          <div key={k} className={`glance__item glance--${k}`}>
+            <NodeGlyph kind={k} size={12} />
+            <b>{counts[k] || 0}</b>
+            <span>{NODE_META[k].label}</span>
+          </div>
+        ))}
+      </div>
+
       <Field label="Departments">
         <RefChips ids={wf.departmentIds} />
       </Field>
-      <Field label="Systems & programs">
-        <RefChips ids={wf.systemIds} />
-      </Field>
-      <Field label="Equipment">
-        <RefChips ids={wf.equipmentIds} />
-      </Field>
+      {usedInSteps.length > 0 && (
+        <Field label="Systems & equipment used in steps">
+          <div className="chips">
+            {usedInSteps.map((s) => (
+              <span key={s.id} className="chipcount">
+                <RefChip id={s.id} />
+                <span className="mono muted">×{s.count}</span>
+              </span>
+            ))}
+          </div>
+        </Field>
+      )}
       {inbound.length > 0 && (
         <Field label="Arrives from">
           <div className="nextlist">
@@ -317,6 +476,27 @@ export function WorkflowInfo({ wf, onSelect }: { wf: Workflow; onSelect: (id: st
         </Field>
       )}
 
+      {flagged.length > 0 && (
+        <div className="field">
+          <div className="field__label">Needs attention ({flagged.length})</div>
+          <div className="nextlist">
+            {flagged.map((n) => {
+              const g = stepGaps(n)
+              return (
+                <button key={n.id} className="nextbtn" onClick={() => onSelect(n.id)}>
+                  <NodeGlyph kind={n.kind} size={12} />
+                  <span className="nextbtn__title">
+                    {n.label}
+                    {g.length > 0 && n.kind !== 'unknown' && <small className="nextbtn__sub">Missing {g.join(', ')}</small>}
+                  </span>
+                  {n.status && <StatusBadge status={n.status} compact />}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="field">
         <div className="field__label">Legend</div>
         <ul className="legend">
@@ -332,22 +512,6 @@ export function WorkflowInfo({ wf, onSelect }: { wf: Workflow; onSelect: (id: st
         </ul>
       </div>
 
-      <div className="field">
-        <div className="field__label">Steps flagged</div>
-        <div className="nextlist">
-          {wf.nodes
-            .filter((n) => n.kind === 'unknown' || n.status === 'unverified' || n.status === 'outdated')
-            .map((n) => (
-              <button key={n.id} className="nextbtn" onClick={() => onSelect(n.id)}>
-                <NodeGlyph kind={n.kind} size={12} />
-                <span className="nextbtn__title">{n.label}</span>
-                {n.status && <StatusBadge status={n.status} compact />}
-              </button>
-            ))}
-        </div>
-      </div>
-
-      <Meta entity={wf} />
       <SourceLine entity={wf} />
       {wf.notes && (
         <Field label="Notes">

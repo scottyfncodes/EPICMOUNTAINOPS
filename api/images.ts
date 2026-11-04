@@ -1,4 +1,4 @@
-import { handler, HttpError, query, readImage, readJson, requireEditor, requireReader, saveImage, send, updateImageCaption } from '../server/core.js'
+import { handler, isPrivate, HttpError, query, readImage, readJson, requireEditor, requireReader, saveImage, send, updateImageCaption } from '../server/core.js'
 
 export default handler({
   GET: async (req, res) => {
@@ -10,8 +10,9 @@ export default handler({
     res.statusCode = 200
     res.setHeader('Content-Type', img.mime)
     res.setHeader('Content-Length', String(img.data.length))
+    res.setHeader('X-Content-Type-Options', 'nosniff')
     // Image ids are content hashes, so they never change.
-    res.setHeader('Cache-Control', process.env.OPS_PRIVATE === '1' ? 'private, max-age=31536000, immutable' : 'public, max-age=31536000, immutable')
+    res.setHeader('Cache-Control', isPrivate() ? 'private, max-age=31536000, immutable' : 'public, max-age=31536000, immutable')
     res.end(img.data)
   },
   POST: async (req, res) => {

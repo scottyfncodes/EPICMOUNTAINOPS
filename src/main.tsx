@@ -4,18 +4,43 @@ import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { StoreProvider } from './lib/store'
-import { AddInfo } from './pages/AddInfo'
 import { CommandCenter } from './pages/CommandCenter'
 import { DepartmentHub, DepartmentsIndex } from './pages/Departments'
 import { NotFound } from './pages/NotFound'
 import { EquipmentDetail, GlossaryDetail, GlossaryIndex, SystemDetail, SystemsIndex } from './pages/Reference'
-import { Review } from './pages/Review'
-import { SearchPage } from './pages/Search'
 import { WorkflowsIndex } from './pages/Workflows'
 import './styles/app.css'
+import './styles/explorer.css'
+import './styles/capture.css'
+import './styles/review.css'
 
-// The flowchart engine is the heaviest part of the app — load it on demand.
+// Heavier, less-visited screens load on demand.
 const WorkflowExplorer = lazy(() => import('./explorer/Explorer').then((m) => ({ default: m.WorkflowExplorer })))
+const ReviewPage = lazy(() => import('./pages/Review').then((m) => ({ default: m.Review })))
+const SearchPageLazy = lazy(() => import('./pages/Search').then((m) => ({ default: m.SearchPage })))
+const AddInfoLazy = lazy(() => import('./pages/AddInfo').then((m) => ({ default: m.AddInfo })))
+
+const Loading = ({ label }: { label: string }) => (
+  <div className="loading" aria-busy="true">
+    <div className="loading__ridge" />
+    <p>{label}</p>
+  </div>
+)
+const Review = () => (
+  <Suspense fallback={<Loading label="Opening review…" />}>
+    <ReviewPage />
+  </Suspense>
+)
+const SearchPage = () => (
+  <Suspense fallback={<Loading label="Opening search…" />}>
+    <SearchPageLazy />
+  </Suspense>
+)
+const AddInfo = () => (
+  <Suspense fallback={<Loading label="Loading…" />}>
+    <AddInfoLazy />
+  </Suspense>
+)
 
 const Explorer = () => (
   <Suspense
@@ -49,6 +74,9 @@ const router = createBrowserRouter([
       { path: '/review', element: <Review /> },
       { path: '/review/notes', element: <Review /> },
       { path: '/review/sources', element: <Review /> },
+      { path: '/review/gaps', element: <Review /> },
+      { path: '/review/deleted', element: <Review /> },
+      { path: '/review/integrity', element: <Review /> },
       { path: '/add', element: <AddInfo /> },
       { path: '/add/:kind', element: <AddInfo /> },
       { path: '/search', element: <SearchPage /> },

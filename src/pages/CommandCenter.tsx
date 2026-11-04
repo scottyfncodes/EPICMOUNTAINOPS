@@ -1,9 +1,9 @@
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import type { Department, Entity, Workflow } from '../../shared/types'
-import { Ridgeline, Topo } from '../components/Art'
+import { Topo } from '../components/Art'
 import { Icon } from '../components/Icon'
-import { EmptyState, StatusBadge, StatusMeter, typeIcon } from '../components/ui'
+import { Emblem, EmptyState, StatusBadge, StatusMeter, typeIcon } from '../components/ui'
 import { ACCENTS, hrefFor, needsAttention, relTime, TYPE_META } from '../lib/meta'
 import { readRecent, useAtlas } from '../lib/store'
 
@@ -31,7 +31,7 @@ export function CommandCenter() {
   return (
     <div className="page page--command">
       <section className="masthead">
-        <Ridgeline className="masthead__art" />
+        <img className="masthead__art" src="/art/panorama.svg" alt="" aria-hidden="true" width={1600} height={600} decoding="async" />
         <div className="masthead__inner">
           <div className="kicker kicker--light">Operations atlas · {new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</div>
           <h1 className="masthead__title">
@@ -77,8 +77,8 @@ export function CommandCenter() {
           </Link>
         </header>
         <div className="deptgrid">
-          {atlas.departments.map((d) => (
-            <DepartmentCard key={d.id} dept={d} workflows={atlas.workflowsForDepartment(d.id)} />
+          {atlas.departments.map((d, i) => (
+            <DepartmentCard key={d.id} dept={d} workflows={atlas.workflowsForDepartment(d.id)} index={i} />
           ))}
         </div>
       </section>
@@ -189,12 +189,13 @@ export function CommandCenter() {
   )
 }
 
-function DepartmentCard({ dept, workflows }: { dept: Department; workflows: Workflow[] }) {
+function DepartmentCard({ dept, workflows, index }: { dept: Department; workflows: Workflow[]; index: number }) {
   const steps = workflows.reduce((n, w) => n + w.nodes.length, 0)
   const open = workflows.filter(needsAttention).length
   return (
-    <Link to={hrefFor(dept)} viewTransition className="deptcard" style={{ '--accent': ACCENTS[dept.accent].color } as React.CSSProperties}>
+    <Link to={hrefFor(dept)} viewTransition className="deptcard enter" style={{ '--accent': ACCENTS[dept.accent].color, '--i': index } as React.CSSProperties}>
       <Topo seed={dept.id} className="deptcard__topo" />
+      <Emblem dept={dept} size={56} className="deptcard__emblem" />
       <div className="deptcard__top">
         <span className="deptcard__code">{dept.code}</span>
         <StatusBadge status={dept.status} compact />

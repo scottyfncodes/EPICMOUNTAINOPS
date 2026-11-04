@@ -6,8 +6,9 @@ import { EntityActions, EntityEditor } from '../components/Editor'
 import { blankEntity } from '../components/Forms'
 import { Icon } from '../components/Icon'
 import { ImageGallery } from '../components/Images'
-import { EmptyState, IllustrativeBanner, Meta, NodeGlyph, PageHeader, RefChip, RichText, Section, SourceLine, StatusBadge } from '../components/ui'
+import { Emblem, EmptyState, IllustrativeBanner, Meta, NodeGlyph, PageHeader, RefChip, RichText, Section, SourceLine, StatusBadge } from '../components/ui'
 import { ACCENTS, hrefFor, needsAttention } from '../lib/meta'
+import { useCaptureTarget } from '../lib/capture'
 import { pushRecent, useAtlas, useStore } from '../lib/store'
 import { NotFound } from './NotFound'
 
@@ -34,6 +35,7 @@ export function DepartmentsIndex() {
           return (
             <Link key={d.id} to={hrefFor(d)} viewTransition className="deptrow" style={{ '--accent': ACCENTS[d.accent].color } as React.CSSProperties}>
               <Topo seed={d.id} className="deptrow__topo" lines={7} />
+              <Emblem dept={d} size={40} className="deptrow__emblem" />
               <span className="deptrow__code">{d.code}</span>
               <span className="deptrow__main">
                 <span className="deptrow__title">{d.title}</span>
@@ -133,6 +135,7 @@ export function DepartmentHub() {
   useEffect(() => {
     if (dept) pushRecent({ type: 'department', id: dept.id })
   }, [dept?.id])
+  useCaptureTarget(dept ? { type: 'department', id: dept.id, label: dept.title } : null)
 
   if (!dept || dept.type !== 'department') return <NotFound />
 
@@ -159,7 +162,12 @@ export function DepartmentHub() {
               <Link to="/departments">Departments</Link> / <span className="mono">{dept.code}</span>
             </>
           }
-          title={dept.title}
+          title={
+            <span className="titlewithemblem">
+              {dept.title}
+              <Emblem dept={dept} size={52} className="depthead__emblem" />
+            </span>
+          }
           sub={dept.tagline}
           accent={dept.accent}
           status={dept.status}
@@ -201,9 +209,9 @@ export function DepartmentHub() {
               </header>
               {s.workflowIds.length ? (
                 <div className="wfcards">
-                  {s.workflowIds.map((wid) => {
+                  {s.workflowIds.map((wid, k) => {
                     const w = atlas.get<Workflow>(wid)
-                    return w ? <WorkflowCard key={wid} w={w} /> : null
+                    return w ? <WorkflowCard key={wid} w={w} index={k} /> : null
                   })}
                 </div>
               ) : (
@@ -340,12 +348,12 @@ export function DepartmentHub() {
   )
 }
 
-export function WorkflowCard({ w }: { w: Workflow }) {
+export function WorkflowCard({ w, index = 0 }: { w: Workflow; index?: number }) {
   const atlas = useAtlas()
   const counts = w.nodes.reduce<Record<string, number>>((acc, n) => ((acc[n.kind] = (acc[n.kind] || 0) + 1), acc), {})
   const depts = atlas.departmentsForWorkflow(w)
   return (
-    <Link to={hrefFor(w)} viewTransition className={`wfcard ${needsAttention(w) ? 'wfcard--attention' : ''}`}>
+    <Link to={hrefFor(w)} viewTransition className={`wfcard enter ${needsAttention(w) ? 'wfcard--attention' : ''}`} style={{ '--i': Math.min(index, 8) } as React.CSSProperties}>
       <div className="wfcard__top">
         <span className="mono wfcard__code">{w.code || 'WF'}</span>
         <StatusBadge status={w.status} compact />

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { CaptureProvider, useCapture } from '../lib/capture'
 import { useStore } from '../lib/store'
+import { CaptureSheet } from './Capture'
 import { Icon, type IconName } from './Icon'
 import { Sheet } from './Sheet'
 
@@ -33,6 +35,25 @@ export function Wordmark({ compact = false }: { compact?: boolean }) {
 }
 
 export function AppShell() {
+  return (
+    <CaptureProvider>
+      <Shell />
+    </CaptureProvider>
+  )
+}
+
+function AddButton() {
+  const { open } = useCapture()
+  const { canEdit, requestEdit } = useStore()
+  return (
+    <button className="btn btn--primary btn--add" onClick={() => (canEdit ? open('menu') : requestEdit())} aria-label="Capture information">
+      <Icon name="plus" size={18} />
+      <span>Add</span>
+    </button>
+  )
+}
+
+function Shell() {
   const { state, atlas, canEdit, lock, requestEdit, offline } = useStore()
   const location = useLocation()
   const navigate = useNavigate()
@@ -77,10 +98,7 @@ export function AppShell() {
               >
                 <Icon name={canEdit ? 'unlock' : 'lock'} />
               </button>
-              <Link to="/add" className="btn btn--primary btn--add" aria-label="Add information">
-                <Icon name="plus" size={18} />
-                <span>Add</span>
-              </Link>
+              <AddButton />
             </div>
           </header>
           <nav className="rail" aria-label="Primary">
@@ -103,6 +121,7 @@ export function AppShell() {
       </main>
       <Toasts />
       <KeyDialog />
+      <CaptureSheet />
     </div>
   )
 }
@@ -159,7 +178,7 @@ function Toasts() {
 }
 
 function KeyDialog() {
-  const { keyPrompt, closeKeyPrompt, unlock } = useStore()
+  const { keyPrompt, closeKeyPrompt, unlock, isPrivate } = useStore()
   const [key, setKey] = useState('')
   const [remember, setRemember] = useState(true)
   const [err, setErr] = useState<string | null>(null)
@@ -171,7 +190,7 @@ function KeyDialog() {
     }
   }, [keyPrompt])
   return (
-    <Sheet open={keyPrompt} onClose={closeKeyPrompt} modal title="Unlock editing" kicker="Owner access" className="sheet--compact" labelledBy="key-title">
+    <Sheet open={keyPrompt} onClose={closeKeyPrompt} modal title={isPrivate ? 'Unlock the atlas' : 'Unlock editing'} kicker="Owner access" className="sheet--compact" labelledBy="key-title">
       <form
         className="form"
         onSubmit={async (e) => {
@@ -188,7 +207,11 @@ function KeyDialog() {
           }
         }}
       >
-        <p className="muted">Reading is open. Changing content needs your edit key — it’s set as OPS_EDIT_KEY in the hosting settings.</p>
+        <p className="muted">
+          {isPrivate
+            ? 'This atlas is private. Your key opens it on this device and allows editing.'
+            : 'Reading is open. Changing content needs your edit key — it’s set as OPS_EDIT_KEY in the hosting settings.'}
+        </p>
         <div className="fi">
           <label className="fi__label" htmlFor="edit-key">
             Edit key

@@ -42,6 +42,8 @@ export interface BaseEntity {
   createdAt: string
   updatedAt: string
   lastVerifiedAt?: string
+  /** Revision number, incremented by the server on every save. */
+  rev?: number
   createdBy?: string
   updatedBy?: string
 }
@@ -59,6 +61,8 @@ export interface Department extends BaseEntity {
   type: 'department'
   code: string
   accent: AccentKey
+  /** Optional emblem artwork (falls back to one matched by department code). */
+  emblem?: 'ski' | 'snb' | 'jrt' | 'none'
   tagline?: string
   description?: string
   sections: DepartmentSection[]
@@ -209,6 +213,8 @@ export interface ContentPayload {
   images: ImageMeta[]
   serverTime: string
   editable: boolean
+  /** True when the server runs in private mode (reads need the key or a read session). */
+  private?: boolean
 }
 
 export interface VersionRecord {
