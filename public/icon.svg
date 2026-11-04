@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="512" height="512" viewBox="0 0 512 512">
+  <title>Epic Mountain Ops</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <rect id="bg" x="0" y="0" width="512" height="512" fill="#14181b"/>
+    <path id="contours" d="M-40 150 C80 90 190 140 300 110 C410 80 470 60 560 100 M-40 200 C90 140 200 190 310 160 C420 130 480 110 560 150 M-40 250 C100 195 210 240 320 212 C430 184 490 165 560 205" fill="none" stroke="#8db3c7" stroke-width="3" stroke-miterlimit="10" opacity="0.22"/>
+    <polygon id="mountain" points="72,380 206,158 282,280 322,218 440,380" fill="#53656f"/>
+    <rect id="signal" x="72" y="414" width="368" height="14" fill="#e8742a"/>
+    <polygon id="shade" points="206,158 282,280 322,218 440,380 330,380" fill="#2a363c" opacity="0.7"/>
+    <polygon id="snowline" points="206,158 242,216 224,230 208,214 190,232 176,208" fill="#f3efe6"/>
+    <polygon id="snowcap-2" points="322,218 348,254 334,263 322,251 308,264 297,256" fill="#f3efe6"/>
+  </g>
+</svg>
