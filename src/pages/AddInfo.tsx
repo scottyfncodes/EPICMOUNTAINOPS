@@ -182,9 +182,9 @@ function AddScreenshot() {
               addImage(meta)
               if (targetEntity) {
                 if (targetEntity.type === 'workflow' && nodeId) {
-                  await save({ ...targetEntity, nodes: targetEntity.nodes.map((n) => (n.id === nodeId ? { ...n, imageIds: [...(n.imageIds || []), meta.id] } : n)) }, { note: 'Attached screenshot', quiet: true })
+                  await save({ ...targetEntity, nodes: targetEntity.nodes.map((n) => (n.id === nodeId ? { ...n, imageIds: [...new Set([...(n.imageIds || []), meta.id])] } : n)) }, { note: 'Attached screenshot', quiet: true })
                 } else {
-                  await save({ ...targetEntity, imageIds: [...(targetEntity.imageIds || []), meta.id] }, { note: 'Attached screenshot', quiet: true })
+                  await save({ ...targetEntity, imageIds: [...new Set([...(targetEntity.imageIds || []), meta.id])] }, { note: 'Attached screenshot', quiet: true })
                 }
               }
               toast(targetEntity ? `Screenshot attached to “${targetEntity.title}”` : 'Screenshot added to the library')

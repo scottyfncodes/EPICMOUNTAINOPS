@@ -8,9 +8,10 @@ import { useStore } from '../lib/store'
 import { Icon } from './Icon'
 import { Sheet } from './Sheet'
 
-export function ImageGallery({ ids, onRemove }: { ids?: string[]; onRemove?: (id: string) => void }) {
+export function ImageGallery({ ids: rawIds, onRemove }: { ids?: string[]; onRemove?: (id: string) => void }) {
   const { atlas } = useStore()
   const [open, setOpen] = useState<string | null>(null)
+  const ids = rawIds ? [...new Set(rawIds)] : rawIds // older records may list an image twice
   if (!ids?.length) return null
   return (
     <>

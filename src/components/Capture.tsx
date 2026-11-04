@@ -32,9 +32,9 @@ export async function attachImageTo(
   if (!e) throw new Error('That item no longer exists.')
   if (e.type === 'workflow' && t.nodeId) {
     const wf = e as Workflow
-    await save({ ...wf, nodes: wf.nodes.map((n) => (n.id === t.nodeId ? { ...n, imageIds: [...(n.imageIds || []), imageId] } : n)) }, { note: 'Attached screenshot', quiet: true })
+    await save({ ...wf, nodes: wf.nodes.map((n) => (n.id === t.nodeId ? { ...n, imageIds: [...new Set([...(n.imageIds || []), imageId])] } : n)) }, { note: 'Attached screenshot', quiet: true })
   } else {
-    await save({ ...e, imageIds: [...(e.imageIds || []), imageId] } as Entity, { note: 'Attached screenshot', quiet: true })
+    await save({ ...e, imageIds: [...new Set([...(e.imageIds || []), imageId])] } as Entity, { note: 'Attached screenshot', quiet: true })
   }
 }
 

@@ -586,7 +586,7 @@ function ExplorerInner({ id }: { id: string }) {
   const attachRef = useRef<(imageId: string) => void>(() => {})
   attachRef.current = (imageId: string) => {
     const nid = selectedId
-    update((w) => (nid ? { ...w, nodes: w.nodes.map((n) => (n.id === nid ? { ...n, imageIds: [...(n.imageIds || []), imageId] } : n)) } : { ...w, imageIds: [...(w.imageIds || []), imageId] }))
+    update((w) => (nid ? { ...w, nodes: w.nodes.map((n) => (n.id === nid ? { ...n, imageIds: [...new Set([...(n.imageIds || []), imageId])] } : n)) } : { ...w, imageIds: [...new Set([...(w.imageIds || []), imageId])] }))
   }
   const selNode = draft?.nodes.find((n) => n.id === selectedId)
   useCaptureTarget(

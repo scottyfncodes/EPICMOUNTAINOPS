@@ -27,6 +27,13 @@ try {
 const { chromium, devices } = pw
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const REMOTE = process.env.BASE_URL?.replace(/\/$/, '')
+// Never run (it writes test data) against the production site.
+if (REMOTE && /^https?:\/\/epic-mountain-ops\.vercel\.app$/i.test(REMOTE)) {
+  console.error('Refusing to run against production. Use a preview deployment URL.')
+  process.exit(2)
+}
+const RUN_START = new Date().toISOString()
+const RUN_TAG = `E2E ${Date.now().toString(36)}`
 const KEY = REMOTE ? process.env.OPS_EDIT_KEY : 'e2e-local-key-123'
 const SHOTS = process.env.E2E_SHOTS
 const PHONES = ['iPhone SE', 'iPhone 14 Pro', 'iPhone 15 Pro Max']
@@ -79,12 +86,23 @@ async function startServer(port, env) {
 /* helpers                                                             */
 /* ------------------------------------------------------------------ */
 const share = process.env.VERCEL_SHARE ? `_vercel_share=${process.env.VERCEL_SHARE}` : ''
-const withShare = (url) => (share ? url + (url.includes('?') ? '&' : '?') + share : url)
+let shareCookie = ''
+/** Exchange a Vercel share token for its access cookie (Node fetch has no cookie jar). */
+async function initShare(base) {
+  if (!share) return
+  const r = await fetch(`${base}/?${share}`, { redirect: 'manual' })
+  const cookies = (r.headers.getSetCookie?.() || []).map((c) => c.split(';')[0])
+  shareCookie = cookies.join('; ')
+  if (!shareCookie) throw new Error(`Vercel did not accept the share token (HTTP ${r.status})`)
+  const probe = await fetch(base + '/api/health', { headers: { cookie: shareCookie }, redirect: 'manual' })
+  if (probe.status !== 200) throw new Error(`Share cookie did not grant access (HTTP ${probe.status})`)
+}
+const withCookie = (init = {}) => (shareCookie ? { ...init, headers: { ...(init.headers || {}), cookie: shareCookie } } : init)
 
 async function newPage(browser, deviceOrViewport, base, extra = {}) {
   const opts = { ...(typeof deviceOrViewport === 'string' ? { ...devices[deviceOrViewport] } : { viewport: deviceOrViewport }), ...extra }
   const ctx = await browser.newContext(opts)
-  if (share) await (await ctx.newPage()).goto(withShare(base + '/api/health')).then(() => {})
+  if (share) await (await ctx.newPage()).goto(`${base}/?${share}`).then(() => {})
   const page = await ctx.newPage()
   const errors = []
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message))
@@ -109,7 +127,7 @@ const vp = (page) =>
   })
 
 async function api(base, path, init = {}) {
-  const r = await fetch(withShare(base + path), init)
+  const r = await fetch(base + path, withCookie(init))
   let body = null
   try {
     body = await r.json()
@@ -147,18 +165,18 @@ async function apiSuite(base) {
   const stale = await api(base, '/api/entities', jsonPost({ entity: { ...gl, title: 'Fleet' }, baseUpdatedAt: 'stale' }))
   ok('stale edit refused (409) instead of overwriting', stale.status === 409)
   const saved = await api(base, '/api/entities', jsonPost({ entity: { ...gl, notes: 'e2e' }, baseUpdatedAt: gl.updatedAt }))
-  ok('save increments the revision', saved.status === 200 && saved.body.entity.rev === 2, `rev=${saved.body?.entity?.rev}`)
+  ok('save increments the revision', saved.status === 200 && saved.body.entity.rev === (gl.rev ?? 1) + 1, `rev ${gl.rev ?? 1}→${saved.body?.entity?.rev}`)
 
   const del = await api(base, '/api/entities?id=gl-fleet', { method: 'DELETE', headers: { 'x-ops-key': KEY } })
   const listed = await api(base, '/api/entities?deleted=1')
   ok('delete is soft and listed for restore', del.status === 200 && listed.body.entities.some((e) => e.id === 'gl-fleet'))
   const restored = await api(base, '/api/entities', jsonPost({ entity: listed.body.entities.find((e) => e.id === 'gl-fleet'), action: 'restore' }))
   const vers = (await api(base, '/api/versions?id=gl-fleet')).body.versions.map((v) => v.action)
-  ok('restore brings it back with full history', restored.status === 200 && vers.join() === 'restore,delete,update,seed', vers.join())
+  ok('restore brings it back with full history', restored.status === 200 && vers.slice(0, 3).join() === 'restore,delete,update' && vers.at(-1) === 'seed', vers.join())
 
   const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
   const up = await api(base, '/api/images', jsonPost({ dataUrl: 'data:image/png;base64,' + png, width: 1, height: 1 }))
-  const img = await fetch(withShare(`${base}/api/images?id=${up.body.image.id}`))
+  const img = await fetch(`${base}/api/images?id=${up.body.image.id}`, withCookie())
   ok('image upload + immutable cached serving', img.status === 200 && img.headers.get('content-type') === 'image/png' && /immutable/.test(img.headers.get('cache-control')))
   ok('non-image uploads refused', [400, 415].includes((await api(base, '/api/images', jsonPost({ dataUrl: 'data:text/html;base64,PGgxPg==' }))).status))
 }
@@ -246,10 +264,12 @@ async function explorerSuite(browser, base) {
   }
   ok('lenses tint steps', (await page.locator('.opsnode.tone--hit, .opsnode.tone--gap, .opsnode.tone--unverified').count()) > 0)
   await page.getByRole('radio', { name: 'Gaps', exact: true }).tap()
-  ok('gaps lens flags unknown steps', (await page.locator('.opsnode--unknown.tone--gap').count()) === 2)
+  const repair = await entity(base, 'wf-jrt-repair')
+  const unknownHere = repair.nodes.filter((n) => n.kind === 'unknown').length
+  ok('gaps lens flags unknown steps', (await page.locator('.opsnode--unknown.tone--gap').count()) === unknownHere, String(unknownHere))
   await page.getByRole('radio', { name: 'Flow', exact: true }).tap()
   await page.locator('button[aria-label="Step list view"]').tap()
-  ok('step list view', (await page.locator('.steprow').count()) === 12)
+  ok('step list view', (await page.locator('.steprow').count()) === repair.nodes.length, String(repair.nodes.length))
   ok('no console errors', errors.length === 0, errors.slice(0, 3).join(' | '))
   await ctx.close()
 }
@@ -279,11 +299,11 @@ async function editingSuite(browser, base) {
   await page.locator('.nodeeditor button', { hasText: 'Next step' }).tap()
   await page.waitForTimeout(400)
   ok('add next step', (await count()) === n0 + 1)
-  await page.locator('.sheet--explorer .nodeeditor input').first().fill('E2E step')
+  await page.locator('.sheet--explorer .nodeeditor input').first().fill(RUN_TAG)
   await page.locator('.sheet--explorer .sheet__foot button[aria-label="Undo"]').tap()
-  ok('undo groups typing into one step', (await page.locator('.react-flow__node', { hasText: 'E2E step' }).count()) === 0)
+  ok('undo groups typing into one step', (await page.locator('.react-flow__node', { hasText: RUN_TAG }).count()) === 0)
   await page.locator('.sheet--explorer .sheet__foot button[aria-label="Redo"]').tap()
-  ok('redo', (await page.locator('.react-flow__node', { hasText: 'E2E step' }).count()) === 1)
+  ok('redo', (await page.locator('.react-flow__node', { hasText: RUN_TAG }).count()) === 1)
   await page.locator('.sheet--explorer button[aria-label="Close panel"]').tap()
   await page.locator('.edgelabel', { hasText: 'Yes' }).first().tap()
   await page.locator('button', { hasText: 'Insert step here' }).tap()
@@ -296,7 +316,7 @@ async function editingSuite(browser, base) {
   await page.locator('.sheet--explorer .sheet__foot button', { hasText: 'Save' }).tap()
   await page.waitForTimeout(1500)
   const saved = await entity(base, 'wf-snb-intake')
-  ok('saved to the database', saved.nodes.length === n0 + 2 && saved.nodes.some((n) => n.label === 'E2E step'))
+  ok('saved to the database', saved.nodes.length === n0 + 2 && saved.nodes.some((n) => n.label === RUN_TAG))
   ok('no console errors', errors.length === 0, errors.slice(0, 3).join(' | '))
   await ctx.close()
 }
@@ -313,12 +333,15 @@ async function captureSuite(browser, base) {
   await page.locator('.qchip', { hasText: 'Tip from a coworker' }).tap()
   await page.locator('button', { hasText: 'Save observation' }).tap()
   await page.waitForTimeout(1200)
-  const obs = (await content(base)).find((e) => e.type === 'note' && e.title === 'Tip from a coworker')
+  const obs = (await content(base))
+    .filter((e) => e.type === 'note' && e.title === 'Tip from a coworker' && e.createdAt >= RUN_START)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    .pop()
   ok('observation saved as Observed, first-hand source, linked', obs?.status === 'observed' && /First-hand/.test(obs.source) && obs.links[0].id === 'sys-inventory')
 
   const file = join(tmpdir(), `ops-e2e-${Date.now()}.png`)
   // 600×1200 PNG: white with a red band (stand-in for customer details)
-  const shot = await page.evaluate(() => {
+  const shot = await page.evaluate((tag) => {
     const c = document.createElement('canvas')
     c.width = 600
     c.height = 1200
@@ -327,9 +350,13 @@ async function captureSuite(browser, base) {
     g.fillRect(0, 0, 600, 1200)
     g.fillStyle = '#dc1e1e'
     g.fillRect(60, 300, 480, 100)
+    g.fillStyle = '#333'
+    g.font = '28px sans-serif'
+    g.fillText(tag, 60, 1100) // makes each run's image unique
     return c.toDataURL('image/png').split(',')[1]
-  })
+  }, RUN_TAG)
   writeFileSync(file, Buffer.from(shot, 'base64'))
+  const imagesBefore = new Set((await entity(base, 'wf-ski-intake')).nodes.find((n) => n.id === 'lookup').imageIds || [])
   await page.goto(base + '/workflows/wf-ski-intake?node=lookup', { waitUntil: 'networkidle' })
   await page.waitForTimeout(800)
   await page.locator('.sheet--explorer .quickcap__btn', { hasText: 'Screenshot' }).tap()
@@ -354,8 +381,9 @@ async function captureSuite(browser, base) {
   await page.locator('.sheet--capture .btn--primary', { hasText: 'Attach to' }).tap()
   await page.waitForTimeout(2000)
   const node = (await entity(base, 'wf-ski-intake')).nodes.find((n) => n.id === 'lookup')
-  const imgId = node.imageIds?.[0]
+  const imgId = (node.imageIds || []).find((i) => !imagesBefore.has(i))
   ok('screenshot attached to the step', Boolean(imgId))
+  if (!imgId) throw new Error('no new image attached')
   const px = await page.evaluate(async (id) => {
     const img = new Image()
     img.src = '/api/images?id=' + id
@@ -379,7 +407,10 @@ async function reviewSuite(browser, base) {
   const { ctx, page, errors } = await newPage(browser, 'iPhone 14 Pro', base)
   await unlockByStorage(page, base)
   await page.goto(base + '/review', { waitUntil: 'networkidle' })
-  await page.locator('.reviewrow', { hasText: 'Camber' }).locator('button', { hasText: 'Review' }).tap()
+  // First unverified glossary entry still in the queue (fresh each run).
+  const row = page.locator('.reviewrow').filter({ has: page.locator('a[href^="/glossary/"]') }).first()
+  const targetId = decodeURIComponent((await row.locator('a').getAttribute('href')).split('/').pop())
+  await row.locator('button', { hasText: 'Review' }).tap()
   const sheet = page.locator('.sheet--status')
   await sheet.getByRole('radio', { name: /^Verified/ }).tap()
   await sheet.locator('button', { hasText: 'Save review' }).tap()
@@ -390,17 +421,20 @@ async function reviewSuite(browser, base) {
   await sheet.locator('#review-note').fill('Seen at the bench')
   await sheet.locator('button', { hasText: 'Save review' }).tap()
   await page.waitForTimeout(1200)
-  const cam = await entity(base, 'gl-camber')
-  ok('status changed deliberately with source', cam.status === 'observed' && /First-hand/.test(cam.source))
-  const v = (await api(base, '/api/versions?id=gl-camber')).body.versions[0]
+  const cam = await entity(base, targetId)
+  ok('status changed deliberately with source', cam.status === 'observed' && /First-hand/.test(cam.source), targetId)
+  const v = (await api(base, '/api/versions?id=' + encodeURIComponent(targetId))).body.versions[0]
   ok('change recorded in history', /Unverified → Observed: Seen at the bench/.test(v.note || ''))
-  await page.locator('#q-res-system button', { hasText: 'Answer' }).tap()
-  await page.locator('#ans-q-res-system').fill('Not confirmed yet — ask at next shift')
-  await page.locator('#q-res-system button', { hasText: 'Resolve' }).tap()
+  const qCard = page.locator('.notecard--question:not(.is-resolved)').first()
+  const qId = await qCard.getAttribute('id')
+  await qCard.locator('button', { hasText: 'Answer' }).tap()
+  await page.locator(`#ans-${qId}`).fill('E2E acceptance answer')
+  await qCard.locator('button', { hasText: 'Resolve' }).tap()
   await page.waitForTimeout(1000)
-  ok('questions resolve inline', (await entity(base, 'q-res-system')).resolved === true)
+  ok('questions resolve inline', (await entity(base, qId)).resolved === true, qId)
   await page.goto(base + '/review/gaps', { waitUntil: 'networkidle' })
-  ok('gaps list every unknown step', (await page.locator('.gapitem--unknown').count()) === 5)
+  const allUnknown = (await content(base)).filter((e) => e.type === 'workflow').reduce((n, w) => n + w.nodes.filter((x) => x.kind === 'unknown').length, 0)
+  ok('gaps list every unknown step', (await page.locator('.gapitem--unknown').count()) === allUnknown, String(allUnknown))
   await page.goto(base + '/review/integrity', { waitUntil: 'networkidle' })
   ok('integrity report clean', await page.locator('.empty__title', { hasText: 'intact' }).isVisible())
   ok('no console errors', errors.length === 0, errors.slice(0, 3).join(' | '))
@@ -432,7 +466,8 @@ async function desktopSuite(browser, base) {
   })
   await page.waitForTimeout(300)
   ok('trackpad pinch zooms', (await vp(page)).z > c.z)
-  ok('minimap shows every step', (await page.locator('.react-flow__minimap-node').count()) === 12)
+  const nRepair = (await entity(base, 'wf-jrt-repair')).nodes.length
+  ok('minimap shows every step', (await page.locator('.react-flow__minimap-node').count()) === nRepair, String(nRepair))
   if (SHOTS) await page.screenshot({ path: join(SHOTS, 'desktop-explorer.png') })
   ok('no console errors', errors.length === 0, errors.slice(0, 3).join(' | '))
   await ctx.close()
@@ -499,6 +534,7 @@ async function main() {
   try {
     const base = REMOTE || (srv = await startServer(5198, {})).base
     console.log(`Epic Mountain Ops E2E → ${base}`)
+    await initShare(base)
     await apiSuite(base)
     await layoutSuite(browser, base)
     await explorerSuite(browser, base)
@@ -508,6 +544,7 @@ async function main() {
     await desktopSuite(browser, base)
     await a11ySuite(browser, base)
     if (!REMOTE) await privateSuite(browser)
+    else console.log('\nPrivate mode: skipped against a deployment (needs a server started with OPS_PRIVATE=1) — run locally.')
   } catch (err) {
     results.push({ suite: current, name: 'suite crashed', pass: false, extra: String(err?.message || err).split('\n')[0] })
     console.error(err)
