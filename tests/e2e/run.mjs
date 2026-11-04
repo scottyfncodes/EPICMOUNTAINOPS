@@ -81,8 +81,8 @@ async function startServer(port, env) {
 const share = process.env.VERCEL_SHARE ? `_vercel_share=${process.env.VERCEL_SHARE}` : ''
 const withShare = (url) => (share ? url + (url.includes('?') ? '&' : '?') + share : url)
 
-async function newPage(browser, deviceOrViewport, base) {
-  const opts = typeof deviceOrViewport === 'string' ? { ...devices[deviceOrViewport] } : { viewport: deviceOrViewport }
+async function newPage(browser, deviceOrViewport, base, extra = {}) {
+  const opts = { ...(typeof deviceOrViewport === 'string' ? { ...devices[deviceOrViewport] } : { viewport: deviceOrViewport }), ...extra }
   const ctx = await browser.newContext(opts)
   if (share) await (await ctx.newPage()).goto(withShare(base + '/api/health')).then(() => {})
   const page = await ctx.newPage()
@@ -442,7 +442,8 @@ async function a11ySuite(browser, base) {
   current = 'Accessibility (axe-core)'
   console.log('\n' + current)
   const axe = require('axe-core').source
-  const { ctx, page } = await newPage(browser, 'iPhone 14 Pro', base)
+  // The app's CSP (correctly) blocks injected inline scripts; only this audit context bypasses it.
+  const { ctx, page } = await newPage(browser, 'iPhone 14 Pro', base, { bypassCSP: true })
   for (const r of ['/', '/departments/dept-jr-trades', '/workflows', '/workflows/wf-ski-intake?node=has-res', '/systems/sys-rental-record', '/glossary', '/review', '/search?q=bsl']) {
     await page.goto(base + r, { waitUntil: 'networkidle' })
     await page.waitForTimeout(500)
