@@ -1,11 +1,12 @@
 import { useId, useMemo, useState, type ReactNode } from 'react'
-import type { DepartmentSection, Entity, EntityRef, EntityType, Status } from '../../shared/types'
+import type { DepartmentSection, Entity, EntityRef, EntityType, Source, Status } from '../../shared/types'
+import { verificationProblem } from '../../shared/validate'
 import { STATUSES } from '../../shared/types'
 import { ACCENTS, newId, NODE_META, STATUS_META, TYPE_META } from '../lib/meta'
 import { useAtlas } from '../lib/store'
 import { Icon } from './Icon'
 import { ImageAttach, ImageGallery } from './Images'
-import { typeIcon } from './ui'
+import { StatusGlyph, typeIcon } from './ui'
 
 export type FieldDef =
   | { key: string; label: string; kind: 'text' | 'textarea'; help?: string; placeholder?: string; required?: boolean; rows?: number }
@@ -47,6 +48,7 @@ export const SCHEMAS: Record<EntityType, FieldDef[]> = {
     { key: 'code', label: 'Short code', kind: 'text', placeholder: 'e.g. SKI' },
     { key: 'tagline', label: 'Tagline', kind: 'text' },
     { key: 'accent', label: 'Accent colour', kind: 'select', options: Object.entries(ACCENTS).map(([value, a]) => ({ value, label: a.label })) },
+    { key: 'emblem', label: 'Emblem', kind: 'select', options: opt({ '': 'Automatic', ski: 'Crossed skis', snb: 'Snowboard', jrt: 'Workshop tools', none: 'None' }) },
     { key: 'summary', label: 'Summary', kind: 'textarea', rows: 2 },
     { key: 'description', label: 'Description', kind: 'textarea' },
     { key: 'sections', label: 'Sections', kind: 'sections', help: 'Organizing categories and the workflows in each.' },
@@ -231,7 +233,7 @@ function FieldInput({ def, value, onChange }: { def: Exclude<FieldDef, { kind: '
                 onClick={() => onChange(s)}
                 title={STATUS_META[s].help}
               >
-                <span className="status__dot" />
+                <StatusGlyph status={s} />
                 {STATUS_META[s].label}
               </button>
             ))}
@@ -479,12 +481,10 @@ function LinksInput({ value, onChange }: { value: EntityRef[]; onChange: (v: Ent
 }
 
 /* ------------------------------------------------------------------ */
-export function validateEntity(e: Entity): string | null {
+export function validateEntity(e: Entity, lookupSource: (id: string) => Source | undefined = () => undefined): string | null {
   if (!e.title?.trim()) return 'Add a title first.'
   if (e.type === 'glossary' && !e.definition?.trim()) return 'Add a definition.'
-  if (e.status === 'verified' && !e.source?.trim() && !e.sourceIds?.length && e.type !== 'source')
-    return 'Verified items need a source or reference. Add one, or choose Observed / Unverified.'
-  return null
+  return verificationProblem(e, lookupSource)
 }
 
 export function blankEntity(type: EntityType, extra: Partial<Entity> = {}): Entity {

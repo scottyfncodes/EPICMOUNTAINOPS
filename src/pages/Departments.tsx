@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import type { Department, Workflow } from '../../shared/types'
 import { Topo } from '../components/Art'
@@ -6,8 +6,10 @@ import { EntityActions, EntityEditor } from '../components/Editor'
 import { blankEntity } from '../components/Forms'
 import { Icon } from '../components/Icon'
 import { ImageGallery } from '../components/Images'
-import { EmptyState, IllustrativeBanner, Meta, NodeGlyph, PageHeader, RefChip, RichText, Section, SourceLine, StatusBadge } from '../components/ui'
+import { RouteMap } from '../components/RouteMap'
+import { Emblem, IllustrativeBanner, Meta, NodeGlyph, PageHeader, RefChip, RichText, Section, SourceLine, StatusBadge } from '../components/ui'
 import { ACCENTS, hrefFor, needsAttention } from '../lib/meta'
+import { useCaptureTarget } from '../lib/capture'
 import { pushRecent, useAtlas, useStore } from '../lib/store'
 import { NotFound } from './NotFound'
 
@@ -34,6 +36,7 @@ export function DepartmentsIndex() {
           return (
             <Link key={d.id} to={hrefFor(d)} viewTransition className="deptrow" style={{ '--accent': ACCENTS[d.accent].color } as React.CSSProperties}>
               <Topo seed={d.id} className="deptrow__topo" lines={7} />
+              <Emblem dept={d} size={40} className="deptrow__emblem" />
               <span className="deptrow__code">{d.code}</span>
               <span className="deptrow__main">
                 <span className="deptrow__title">{d.title}</span>
@@ -48,78 +51,11 @@ export function DepartmentsIndex() {
           )
         })}
       </div>
-      <ConnectionMap />
+      <Section kicker="Hand-offs" title="How the departments connect">
+        <RouteMap />
+      </Section>
       <EntityEditor entity={blankEntity('department', { order: atlas.departments.length + 1 })} open={creating} onClose={() => setCreating(false)} isNew />
     </div>
-  )
-}
-
-/** Small schematic of hand-offs between departments. */
-function ConnectionMap() {
-  const atlas = useAtlas()
-  const depts = atlas.departments
-  const links = useMemo(() => {
-    const out: { from: Department; to: Department; count: number }[] = []
-    for (const d of depts)
-      for (const c of atlas.departmentConnections(d.id))
-        if (c.direction === 'out') out.push({ from: d, to: c.department, count: c.via.length })
-    return out
-  }, [atlas, depts])
-  if (depts.length < 2) return null
-  const W = 340
-  const H = 220
-  const pos = new Map(
-    depts.map((d, i) => {
-      const a = (i / depts.length) * Math.PI * 2 - Math.PI / 2
-      return [d.id, { x: W / 2 + Math.cos(a) * 110, y: H / 2 + Math.sin(a) * 75 }]
-    }),
-  )
-  return (
-    <Section kicker="Hand-offs" title="How departments connect">
-      <div className="connmap">
-        <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Diagram of hand-offs between departments">
-          <defs>
-            <marker id="cm-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-              <path d="M0 0 10 5 0 10z" fill="var(--paper-dim)" />
-            </marker>
-          </defs>
-          {links.map((l, i) => {
-            const a = pos.get(l.from.id)!
-            const b = pos.get(l.to.id)!
-            const mx = (a.x + b.x) / 2 + (b.y - a.y) * 0.18
-            const my = (a.y + b.y) / 2 - (b.x - a.x) * 0.18
-            const t = 0.82
-            const ex = (1 - t) * (1 - t) * a.x + 2 * (1 - t) * t * mx + t * t * b.x
-            const ey = (1 - t) * (1 - t) * a.y + 2 * (1 - t) * t * my + t * t * b.y
-            return (
-              <g key={i}>
-                <path d={`M${a.x} ${a.y} Q${mx} ${my} ${ex} ${ey}`} fill="none" stroke="var(--paper-dim)" strokeWidth={1 + l.count * 0.6} markerEnd="url(#cm-arrow)" opacity="0.8" />
-              </g>
-            )
-          })}
-          {depts.map((d) => {
-            const p = pos.get(d.id)!
-            return (
-              <g key={d.id} transform={`translate(${p.x} ${p.y})`}>
-                <circle r="26" fill="var(--ink-2)" stroke={ACCENTS[d.accent].color} strokeWidth="2" />
-                <text textAnchor="middle" dy="4" className="connmap__code" fill={ACCENTS[d.accent].color}>
-                  {d.code}
-                </text>
-              </g>
-            )
-          })}
-        </svg>
-        <ul className="connmap__list">
-          {links.length === 0 && <li className="muted">No hand-offs mapped yet. Add “Hand-off” steps to workflows to connect departments.</li>}
-          {links.map((l, i) => (
-            <li key={i}>
-              <b style={{ color: ACCENTS[l.from.accent].color }}>{l.from.code}</b> → <b style={{ color: ACCENTS[l.to.accent].color }}>{l.to.code}</b>
-              <span className="muted"> · {l.count} hand-off{l.count > 1 ? 's' : ''}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </Section>
   )
 }
 
@@ -133,12 +69,14 @@ export function DepartmentHub() {
   useEffect(() => {
     if (dept) pushRecent({ type: 'department', id: dept.id })
   }, [dept?.id])
+  useCaptureTarget(dept ? { type: 'department', id: dept.id, label: dept.title } : null)
 
   if (!dept || dept.type !== 'department') return <NotFound />
 
   const workflows = atlas.workflowsForDepartment(dept.id)
   const inSections = new Set(dept.sections.flatMap((s) => s.workflowIds))
   const loose = workflows.filter((w) => !inSections.has(w.id))
+  const guests = workflows.filter((w) => w.departmentIds[0] !== dept.id)
   const systemIds = [...new Set([...(dept.systemIds || []), ...workflows.flatMap((w) => [...w.systemIds, ...w.nodes.flatMap((n) => n.systemIds || [])])])]
   const equipmentIds = [...new Set([...(dept.equipmentIds || []), ...workflows.flatMap((w) => w.equipmentIds)])].filter((eid) => {
     const e = atlas.get(eid)
@@ -159,7 +97,12 @@ export function DepartmentHub() {
               <Link to="/departments">Departments</Link> / <span className="mono">{dept.code}</span>
             </>
           }
-          title={dept.title}
+          title={
+            <span className="titlewithemblem">
+              {dept.title}
+              <Emblem dept={dept} size={52} className="depthead__emblem" />
+            </span>
+          }
           sub={dept.tagline}
           accent={dept.accent}
           status={dept.status}
@@ -173,13 +116,11 @@ export function DepartmentHub() {
         </div>
       )}
 
-      <nav className="jumpbar" aria-label="Sections">
-        {dept.sections.map((s) => (
-          <a key={s.id} href={`#${s.id}`}>
-            {s.title}
-            <span>{s.workflowIds.length}</span>
-          </a>
-        ))}
+      <nav className="jumpbar" aria-label="On this page">
+        <a href="#route">Route</a>
+        <a href="#topics">
+          Topics <span>{dept.sections.length}</span>
+        </a>
         <a href="#systems">Systems</a>
         <a href="#equipment">Tools & equipment</a>
         <a href="#connections">Connections</a>
@@ -187,48 +128,87 @@ export function DepartmentHub() {
 
       <div className="hubgrid">
         <div className="hubgrid__main">
-          {dept.sections.map((s, i) => (
-            <section key={s.id} id={s.id} className="hubsec">
-              <header className="hubsec__head">
-                <span className="hubsec__num mono">{String(i + 1).padStart(2, '0')}</span>
-                <div>
-                  <h2>{s.title}</h2>
-                  {s.description && <p className="muted">{s.description}</p>}
-                </div>
-                <button className="iconbtn" aria-label={`Add workflow to ${s.title}`} onClick={() => (canEdit ? setNewWfFor(s.id) : requestEdit())}>
-                  <Icon name="plus" size={18} />
-                </button>
-              </header>
-              {s.workflowIds.length ? (
-                <div className="wfcards">
-                  {s.workflowIds.map((wid) => {
-                    const w = atlas.get<Workflow>(wid)
-                    return w ? <WorkflowCard key={wid} w={w} /> : null
-                  })}
-                </div>
-              ) : (
-                <EmptyState icon="flow" title="Nothing captured yet">
-                  This is a placeholder for {s.title.toLowerCase()}. Add a workflow when you learn how it works.
-                </EmptyState>
-              )}
-            </section>
-          ))}
-          {loose.length > 0 && (
-            <section className="hubsec">
-              <header className="hubsec__head">
-                <span className="hubsec__num mono">··</span>
-                <div>
-                  <h2>Other workflows</h2>
-                  <p className="muted">Involve this department but aren’t in a section yet.</p>
-                </div>
-              </header>
-              <div className="wfcards">
-                {loose.map((w) => (
-                  <WorkflowCard key={w.id} w={w} />
-                ))}
+          <section id="route" className="hubsec">
+            <header className="hubsec__head">
+              <span className="hubsec__num mono">01</span>
+              <div>
+                <h2>How work flows through {dept.title}</h2>
+                <p className="muted">Every workflow, in order, following its hand-off steps. Gaps show where no hand-off is mapped yet.</p>
               </div>
-            </section>
-          )}
+            </header>
+            <RouteMap departmentId={dept.id} />
+            {guests.length > 0 && (
+              <div className="guests">
+                <div className="kicker">Also involves {dept.code}</div>
+                <ul className="topic__links">
+                  {guests.map((w) => (
+                    <li key={w.id}>
+                      <Link to={hrefFor(w)} className="tlink" viewTransition>
+                        <span className="mono">{w.code}</span> {w.title}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </section>
+
+          <section id="topics" className="hubsec">
+            <header className="hubsec__head">
+              <span className="hubsec__num mono">02</span>
+              <div>
+                <h2>By topic</h2>
+                <p className="muted">Your categories for this department. A workflow can sit under more than one.</p>
+              </div>
+            </header>
+            <ul className="topics">
+              {dept.sections.map((s, i) => (
+                <li key={s.id} id={s.id} className="topic">
+                  <div className="topic__head">
+                    <span className="topic__num mono">{String(i + 1).padStart(2, '0')}</span>
+                    <b>{s.title}</b>
+                    <button className="iconbtn" aria-label={`Add workflow to ${s.title}`} onClick={() => (canEdit ? setNewWfFor(s.id) : requestEdit())}>
+                      <Icon name="plus" size={18} />
+                    </button>
+                  </div>
+                  {s.description && <p className="topic__desc">{s.description}</p>}
+                  {s.workflowIds.length ? (
+                    <ul className="topic__links">
+                      {s.workflowIds.map((wid) => {
+                        const w = atlas.get<Workflow>(wid)
+                        return w ? (
+                          <li key={wid}>
+                            <Link to={hrefFor(w)} className="tlink" viewTransition>
+                              <span className="mono">{w.code}</span> {w.title}
+                            </Link>
+                          </li>
+                        ) : null
+                      })}
+                    </ul>
+                  ) : (
+                    <p className="topic__empty">Nothing captured yet — tap + when you learn how this works.</p>
+                  )}
+                </li>
+              ))}
+              {loose.length > 0 && (
+                <li className="topic">
+                  <div className="topic__head">
+                    <span className="topic__num mono">··</span>
+                    <b>Not in a topic yet</b>
+                  </div>
+                  <ul className="topic__links">
+                    {loose.map((w) => (
+                      <li key={w.id}>
+                        <Link to={hrefFor(w)} className="tlink" viewTransition>
+                          <span className="mono">{w.code}</span> {w.title}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              )}
+            </ul>
+          </section>
         </div>
 
         <aside className="hubgrid__side">
@@ -340,12 +320,12 @@ export function DepartmentHub() {
   )
 }
 
-export function WorkflowCard({ w }: { w: Workflow }) {
+export function WorkflowCard({ w, index = 0 }: { w: Workflow; index?: number }) {
   const atlas = useAtlas()
   const counts = w.nodes.reduce<Record<string, number>>((acc, n) => ((acc[n.kind] = (acc[n.kind] || 0) + 1), acc), {})
   const depts = atlas.departmentsForWorkflow(w)
   return (
-    <Link to={hrefFor(w)} viewTransition className={`wfcard ${needsAttention(w) ? 'wfcard--attention' : ''}`}>
+    <Link to={hrefFor(w)} viewTransition className={`wfcard enter ${needsAttention(w) ? 'wfcard--attention' : ''}`} style={{ '--i': Math.min(index, 8) } as React.CSSProperties}>
       <div className="wfcard__top">
         <span className="mono wfcard__code">{w.code || 'WF'}</span>
         <StatusBadge status={w.status} compact />

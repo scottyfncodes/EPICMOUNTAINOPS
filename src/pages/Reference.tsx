@@ -20,6 +20,7 @@ import {
   typeIcon,
 } from '../components/ui'
 import { ACCENTS, hrefFor } from '../lib/meta'
+import { useCapture, useCaptureTarget } from '../lib/capture'
 import { pushRecent, useAtlas, useStore } from '../lib/store'
 import { NotFound } from './NotFound'
 
@@ -158,6 +159,7 @@ function useTrack(e?: Entity) {
   useEffect(() => {
     if (e) pushRecent({ type: e.type, id: e.id })
   }, [e?.id])
+  useCaptureTarget(e ? { type: e.type, id: e.id, label: e.title } : null)
 }
 
 export function SystemDetail() {
@@ -384,20 +386,22 @@ export function GlossaryIndex() {
       {letters.map(([L, items]) => (
         <section key={L} id={`letter-${L}`} className="glossgroup">
           <div className="glossgroup__letter">{L}</div>
-          <dl className="glosslist">
+          <ul className="glosslist">
             {items.map((g) => (
-              <Link key={g.id} to={hrefFor(g)} className="glossitem" viewTransition>
-                <dt>
-                  {g.title}
-                  {g.aka.length > 0 && <span className="glossitem__aka">{g.aka.join(' · ')}</span>}
-                </dt>
-                <dd>{g.definition}</dd>
-                <span className="glossitem__meta">
-                  {GLOSS_KIND[g.kind]} <StatusBadge status={g.status} compact />
-                </span>
-              </Link>
+              <li key={g.id}>
+                <Link to={hrefFor(g)} className="glossitem" viewTransition>
+                  <span className="glossitem__term">
+                    {g.title}
+                    {g.aka.length > 0 && <span className="glossitem__aka">{g.aka.join(' · ')}</span>}
+                  </span>
+                  <span className="glossitem__def">{g.definition}</span>
+                  <span className="glossitem__meta">
+                    {GLOSS_KIND[g.kind]} <StatusBadge status={g.status} compact />
+                  </span>
+                </Link>
+              </li>
             ))}
-          </dl>
+          </ul>
         </section>
       ))}
       <EntityEditor entity={blankEntity('glossary')} open={creating} onClose={() => setCreating(false)} isNew />
@@ -484,7 +488,10 @@ export function GlossaryDetail() {
 /* ------------------------------------------------------------------ */
 export function NotesBox({ notes, entity, nodeId }: { notes: ReturnType<ReturnType<typeof useAtlas>['notesFor']>; entity: Entity; nodeId?: string }) {
   const { canEdit, requestEdit } = useStore()
-  const [asking, setAsking] = useState<null | 'question' | 'observation'>(null)
+  const { open } = useCapture()
+  const node = nodeId && entity.type === 'workflow' ? entity.nodes.find((n) => n.id === nodeId) : undefined
+  const target = { type: entity.type, id: entity.id, nodeId, label: node ? `${entity.type === 'workflow' && entity.code ? entity.code + ' › ' : ''}${node.label}` : entity.title }
+  const go = (mode: 'screenshot' | 'observation' | 'question') => (canEdit ? open(mode, target) : requestEdit())
   return (
     <Section title="Questions & observations" kicker="Clarify">
       {notes.length > 0 && (
@@ -502,27 +509,17 @@ export function NotesBox({ notes, entity, nodeId }: { notes: ReturnType<ReturnTy
           ))}
         </ul>
       )}
-      <div className="row gap-s wrap">
-        <button className="btn btn--ghost btn--small" onClick={() => (canEdit ? setAsking('question') : requestEdit())}>
-          <Icon name="question" size={14} /> Ask a question
+      <div className="quickcap" role="group" aria-label="Capture about this">
+        <button className="quickcap__btn" onClick={() => go('screenshot')}>
+          <Icon name="camera" size={18} /> Screenshot
         </button>
-        <button className="btn btn--ghost btn--small" onClick={() => (canEdit ? setAsking('observation') : requestEdit())}>
-          <Icon name="eye" size={14} /> Add observation
+        <button className="quickcap__btn" onClick={() => go('observation')}>
+          <Icon name="eye" size={18} /> Observation
+        </button>
+        <button className="quickcap__btn" onClick={() => go('question')}>
+          <Icon name="question" size={18} /> Question
         </button>
       </div>
-      {asking && (
-        <EntityEditor
-          entity={blankEntity('note', {
-            kind: asking,
-            status: asking === 'observation' ? 'observed' : 'unverified',
-            links: [{ type: entity.type, id: entity.id, ...(nodeId ? { nodeId } : {}) }],
-          } as any)}
-          open
-          isNew
-          navigateOnCreate={false}
-          onClose={() => setAsking(null)}
-        />
-      )}
     </Section>
   )
 }

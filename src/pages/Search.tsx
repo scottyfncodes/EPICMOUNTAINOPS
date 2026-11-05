@@ -95,12 +95,12 @@ export function SearchPage() {
       </form>
 
       {q && hits.length > 0 && (
-        <div className="pills pills--scroll" role="tablist" aria-label="Filter results by type">
-          <button className={`pill ${kind === 'all' ? 'is-on' : ''}`} onClick={() => setKind('all')}>
+        <div className="pills pills--scroll" role="group" aria-label="Filter results by type">
+          <button className={`pill ${kind === 'all' ? 'is-on' : ''}`} aria-pressed={kind === 'all'} onClick={() => setKind('all')}>
             All <span>{hits.length}</span>
           </button>
           {ORDER.filter((k) => counts[k]).map((k) => (
-            <button key={k} className={`pill ${kind === k ? 'is-on' : ''}`} onClick={() => setKind(k)}>
+            <button key={k} className={`pill ${kind === k ? 'is-on' : ''}`} aria-pressed={kind === k} onClick={() => setKind(k)}>
               {KIND_LABEL[k]} <span>{counts[k]}</span>
             </button>
           ))}

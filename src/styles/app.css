@@ -14,7 +14,7 @@
   --paper: #f3efe6;
   --paper-2: #e6e0d3;
   --paper-dim: #b8b3a8;
-  --paper-mute: #8b887f;
+  --paper-mute: #9a968c;
   --glacier: #8db3c7;
   --glacier-deep: #4f7d95;
   --forest: #3e6b53;
@@ -2058,6 +2058,8 @@ button.chip:hover {
   line-height: 1;
 }
 .glosslist {
+  list-style: none;
+  padding: 0;
   margin: 0;
   display: grid;
   gap: 2px;
@@ -2071,7 +2073,7 @@ button.chip:hover {
 .glossitem:hover {
   background: var(--ink-2);
 }
-.glossitem dt {
+.glossitem__term {
   font-weight: 700;
   font-size: 17px;
   display: flex;
@@ -2085,7 +2087,8 @@ button.chip:hover {
   font-weight: 400;
   color: var(--paper-mute);
 }
-.glossitem dd {
+.glossitem__def {
+  display: block;
   margin: 4px 0 0;
   color: var(--paper-dim);
   font-size: 14.5px;
@@ -2132,7 +2135,8 @@ button.chip:hover {
   border-left: 3px solid var(--glacier);
 }
 .notecard.is-resolved {
-  opacity: 0.8;
+  background: transparent;
+  border-style: dashed;
 }
 .notecard.is-flash {
   border-color: var(--paper);
@@ -2912,9 +2916,7 @@ button.chip:hover {
   border-color: var(--paper);
   box-shadow: 0 0 0 3px rgba(243, 239, 230, 0.18), 0 10px 24px -8px rgba(0, 0, 0, 0.9);
 }
-.opsnode.is-dimmed {
-  opacity: 0.42;
-}
+
 .opsnode__head {
   display: flex;
   justify-content: space-between;
@@ -3600,4 +3602,60 @@ button.chip:hover {
   ::view-transition-new(root) {
     animation: none;
   }
+}
+
+/* ==========================================================================
+   v2 editorial layer — emblems, panorama, entrance motion
+   ========================================================================== */
+.emblem {
+  display: inline-block;
+  flex: none;
+  background: currentColor;
+  -webkit-mask: var(--emblem) center / contain no-repeat;
+  mask: var(--emblem) center / contain no-repeat;
+}
+.masthead__art {
+  object-fit: cover;
+  object-position: 50% 100%;
+  opacity: 0.95;
+}
+.masthead::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 40%;
+  background: linear-gradient(to bottom, transparent, var(--ink));
+  pointer-events: none;
+}
+.masthead__inner {
+  z-index: 1;
+}
+.deptcard__emblem {
+  position: absolute;
+  right: 14px;
+  bottom: 50px;
+  opacity: 0.85;
+  transition: transform 0.35s var(--ease);
+}
+.deptcard:hover .deptcard__emblem {
+  transform: rotate(-6deg) scale(1.05);
+}
+.deptrow__emblem {
+  color: var(--accent);
+}
+.titlewithemblem {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+.xbar__dept {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* restrained entrance: cards rise in sequence once */
+.enter {
+  animation: rise 0.5s var(--ease) both;
+  animation-delay: calc(var(--i, 0) * 55ms);
 }

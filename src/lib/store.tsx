@@ -13,7 +13,7 @@ import type {
   System,
   Workflow,
 } from '../../shared/types'
-import { api, ApiError, currentKey, setKey, setPrivateMode } from './api'
+import { api, ApiError, currentKey, setKey } from './api'
 
 /* ------------------------------------------------------------------ */
 /* Atlas: an indexed, read-only view of all content                   */
@@ -55,7 +55,7 @@ export interface Atlas {
   imagesUsedBy(imageId: string): { entity: Entity; node?: FlowNode }[]
 }
 
-function buildAtlas(entities: Entity[], images: ImageMeta[]): Atlas {
+export function buildAtlas(entities: Entity[], images: ImageMeta[]): Atlas {
   const byId = new Map(entities.map((e) => [e.id, e]))
   const imgMap = new Map(images.map((i) => [i.id, i]))
   const lists = new Map<EntityType, Entity[]>()
@@ -171,6 +171,7 @@ interface StoreValue {
   toasts: Toast[]
   dismissToast(id: number): void
   keyPrompt: boolean
+  isPrivate: boolean
   requestEdit(): void
   closeKeyPrompt(): void
 }
@@ -204,6 +205,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [canEdit, setCanEdit] = useState(false)
   const [toasts, setToasts] = useState<Toast[]>([])
   const [keyPrompt, setKeyPrompt] = useState(false)
+  const [isPrivate, setIsPrivate] = useState(false)
   const toastId = useRef(0)
 
   const toast = useCallback((text: string, kind: Toast['kind'] = 'ok') => {
@@ -218,12 +220,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setEntities(payload.entities)
       setImages(payload.images)
       setCanEdit(payload.editable)
+      setIsPrivate(Boolean(payload.private))
       setState('ready')
       setOffline(false)
       writeCache(payload)
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
-        setPrivateMode(true)
+        // Private atlas without a session: drop any cached copy rather than show it.
+        try {
+          localStorage.removeItem(CACHE_KEY)
+        } catch {
+          /* ignore */
+        }
+        setEntities([])
+        setImages([])
+        setIsPrivate(true)
         setState('locked')
         return
       }
@@ -314,8 +325,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     lock: () => {
       setKey(null)
       setCanEdit(false)
-      toast('Editing locked on this device', 'info')
+      api.lockSession().catch(() => {})
+      if (isPrivate) {
+        // A private atlas must not stay readable on a locked device.
+        try {
+          localStorage.removeItem(CACHE_KEY)
+        } catch {
+          /* ignore */
+        }
+        setEntities([])
+        setImages([])
+        setState('locked')
+      }
+      toast('Locked on this device', 'info')
     },
+    isPrivate,
     save,
     remove,
     addImage: (meta) => setImages((list) => (list.some((i) => i.id === meta.id) ? list : [meta, ...list])),

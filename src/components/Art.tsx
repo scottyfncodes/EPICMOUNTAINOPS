@@ -56,35 +56,3 @@ export function Topo({ seed, className = '', lines = 9 }: { seed: string; classN
     </svg>
   )
 }
-
-/** Layered ridgeline for the Command Center masthead. */
-export function Ridgeline({ className = '' }: { className?: string }) {
-  const layers = useMemo(() => {
-    const r = rng(7331)
-    const make = (base: number, amp: number, n: number) => {
-      const pts: [number, number][] = [[0, base]]
-      for (let i = 1; i < n; i++) {
-        const x = (i / n) * 1200
-        const y = base - amp * (0.35 + r() * 0.65) * (i % 2 ? 1 : 0.45)
-        pts.push([x, y])
-      }
-      pts.push([1200, base - amp * 0.3])
-      return `M0 400 L${pts.map(([x, y]) => `${x.toFixed(0)} ${y.toFixed(0)}`).join(' L')} L1200 400 Z`
-    }
-    return [make(250, 150, 15), make(300, 120, 19), make(345, 80, 25)]
-  }, [])
-  return (
-    <svg className={`ridge ${className}`} viewBox="0 0 1200 400" preserveAspectRatio="xMidYMax slice" aria-hidden="true">
-      <defs>
-        <linearGradient id="ridge-fade" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="var(--ink)" stopOpacity="0" />
-          <stop offset="1" stopColor="var(--ink)" stopOpacity="1" />
-        </linearGradient>
-      </defs>
-      <path d={layers[0]} fill="var(--ridge-1)" />
-      <path d={layers[1]} fill="var(--ridge-2)" />
-      <path d={layers[2]} fill="var(--ridge-3)" />
-      <rect x="0" y="200" width="1200" height="200" fill="url(#ridge-fade)" />
-    </svg>
-  )
-}

@@ -7,7 +7,8 @@ import { useStore } from '../lib/store'
 import { FormFields, SCHEMAS, validateEntity } from './Forms'
 import { Icon } from './Icon'
 import { Sheet } from './Sheet'
-import { StatusBadge } from './ui'
+import { StatusReview } from './StatusReview'
+import { StatusBadge, StatusGlyph } from './ui'
 
 /** Full editor for any entity (create or update). */
 export function EntityEditor({
@@ -25,7 +26,7 @@ export function EntityEditor({
   isNew?: boolean
   navigateOnCreate?: boolean
 }) {
-  const { save, remove } = useStore()
+  const { save, remove, atlas } = useStore()
   const navigate = useNavigate()
   const [draft, setDraft] = useState<Entity>(entity)
   const [note, setNote] = useState('')
@@ -42,7 +43,7 @@ export function EntityEditor({
   }, [open, entity])
 
   const submit = async () => {
-    const problem = validateEntity(draft)
+    const problem = validateEntity(draft, (id) => atlas.get(id) as any)
     if (problem) return setErr(problem)
     setBusy(true)
     try {
@@ -176,9 +177,13 @@ export function EntityActions({ entity }: { entity: Entity }) {
   const { canEdit, requestEdit } = useStore()
   const [editing, setEditing] = useState(false)
   const [history, setHistory] = useState(false)
+  const [reviewing, setReviewing] = useState(false)
   return (
     <>
       <div className="row gap-s wrap">
+        <button className="btn btn--ghost" onClick={() => (canEdit ? setReviewing(true) : requestEdit())}>
+          <StatusGlyph status={entity.status} size={14} /> Review status
+        </button>
         <button className="btn btn--ghost" onClick={() => (canEdit ? setEditing(true) : requestEdit())}>
           <Icon name={canEdit ? 'edit' : 'lock'} size={16} /> Edit
         </button>
@@ -188,6 +193,7 @@ export function EntityActions({ entity }: { entity: Entity }) {
       </div>
       <EntityEditor entity={entity} open={editing} onClose={() => setEditing(false)} />
       <HistoryPanel entity={entity} open={history} onClose={() => setHistory(false)} />
+      <StatusReview entity={entity} open={reviewing} onClose={() => setReviewing(false)} />
     </>
   )
 }

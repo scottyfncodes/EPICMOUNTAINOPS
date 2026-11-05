@@ -1,4 +1,4 @@
-import { handler, listEntities, listImages, requireReader, send, keyMatches } from '../server/core.js'
+import { handler, isPrivate, keyMatches, listEntities, listImages, requireReader, send } from '../server/core.js'
 
 export default handler({
   GET: async (req, res) => {
@@ -10,6 +10,7 @@ export default handler({
       images,
       serverTime: new Date().toISOString(),
       editable: keyMatches(Array.isArray(key) ? key[0] : key),
+      private: isPrivate(),
     })
   },
 })

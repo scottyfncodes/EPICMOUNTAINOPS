@@ -3,14 +3,43 @@ import { Link } from 'react-router-dom'
 import type { AccentKey, Entity, EntityType, GlossaryEntry, NodeKind, Status } from '../../shared/types'
 import { ACCENTS, hrefFor, NODE_META, STATUS_META, TYPE_META } from '../lib/meta'
 import { useAtlas } from '../lib/store'
+import { useGlossaryPeek } from './GlossaryPeek'
 import { Icon, type IconName } from './Icon'
 
 /* ------------------------------------------------------------------ */
-export function StatusBadge({ status, compact = false }: { status: Status; compact?: boolean }) {
+/** Shape + colour per status, so it reads without relying on colour alone. */
+export function StatusGlyph({ status, size = 12 }: { status: Status; size?: number }) {
+  const c = 'currentColor'
+  return (
+    <svg className="sglyph" width={size} height={size} viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+      {status === 'verified' && (
+        <>
+          <circle cx="6" cy="6" r="5.5" fill={c} />
+          <path d="M3.4 6.2 5.2 8l3.4-3.8" fill="none" stroke="var(--ink)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </>
+      )}
+      {status === 'observed' && (
+        <>
+          <circle cx="6" cy="6" r="4.9" fill="none" stroke={c} strokeWidth="1.3" />
+          <path d="M6 1.1a4.9 4.9 0 0 0 0 9.8z" fill={c} />
+        </>
+      )}
+      {status === 'unverified' && <circle cx="6" cy="6" r="4.8" fill="none" stroke={c} strokeWidth="1.4" strokeDasharray="2.2 1.6" />}
+      {status === 'outdated' && (
+        <>
+          <path d="M6 .9 11.4 10.6H.6z" fill={c} />
+          <path d="M6 4.3v3M6 8.9v.1" stroke="var(--ink)" strokeWidth="1.4" strokeLinecap="round" />
+        </>
+      )}
+    </svg>
+  )
+}
+
+export function StatusBadge({ status, compact = false, inherited = false }: { status: Status; compact?: boolean; inherited?: boolean }) {
   const m = STATUS_META[status]
   return (
-    <span className={`status status--${status}`} title={`${m.label}: ${m.help}`}>
-      <span className="status__dot" aria-hidden="true" />
+    <span className={`status status--${status} ${inherited ? 'status--inherited' : ''}`} title={`${m.label}${inherited ? ' (from workflow)' : ''}: ${m.help}`}>
+      <StatusGlyph status={status} />
       {compact ? m.short : m.label}
     </span>
   )
@@ -30,8 +59,8 @@ export function StatusMeter({ items, showLegend = true }: { items: { status: Sta
       {showLegend && (
         <div className="meter__legend">
           {(Object.keys(counts) as Status[]).map((s) => (
-            <span key={s} className={`meter__key meter__key--${s}`}>
-              <span className="status__dot" />
+            <span key={s} className={`meter__key status--${s}`}>
+              <StatusGlyph status={s} />
               {STATUS_META[s].label} <b>{counts[s]}</b>
             </span>
           ))}
@@ -233,6 +262,7 @@ function useGlossaryMatcher(skipId?: string) {
 /** Renders plain text, turning glossary terms into links (first occurrence of each). */
 export function RichText({ text, skipGlossaryId, as: Tag = 'p' }: { text?: string; skipGlossaryId?: string; as?: 'p' | 'span' | 'div' }) {
   const matcher = useGlossaryMatcher(skipGlossaryId)
+  const peek = useGlossaryPeek()
   if (!text) return null
   if (!matcher) return <Tag className="prose">{text}</Tag>
   const out: ReactNode[] = []
@@ -245,7 +275,19 @@ export function RichText({ text, skipGlossaryId, as: Tag = 'p' }: { text?: strin
     const i = m.index!
     out.push(text.slice(last, i))
     out.push(
-      <Link key={i} to={hrefFor(hit.entry)} viewTransition className="gloss" title={hit.entry.definition}>
+      <Link
+        key={i}
+        to={hrefFor(hit.entry)}
+        viewTransition
+        className="gloss"
+        aria-haspopup="dialog"
+        onClick={(e) => {
+          // Plain tap: show the definition in place. Modified clicks open the entry as usual.
+          if (!peek || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+          e.preventDefault()
+          peek(hit.entry, e.currentTarget)
+        }}
+      >
         {m[0]}
       </Link>,
     )
@@ -267,5 +309,27 @@ export function TypeLabel({ type }: { type: EntityType }) {
       <Icon name={TYPE_ICON[type]} size={14} />
       {TYPE_META[type].label}
     </span>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Department emblems (VectorCraft line art, tinted with the accent)   */
+/* ------------------------------------------------------------------ */
+const EMBLEM_BY_CODE: Record<string, 'ski' | 'snb' | 'jrt'> = { SKI: 'ski', SNB: 'snb', JRT: 'jrt' }
+
+export function emblemFor(d: { code: string; emblem?: string }): string | null {
+  if (d.emblem === 'none') return null
+  return d.emblem || EMBLEM_BY_CODE[d.code?.toUpperCase()] || null
+}
+
+export function Emblem({ dept, size = 40, className = '' }: { dept: { code: string; emblem?: string; accent: AccentKey }; size?: number; className?: string }) {
+  const e = emblemFor(dept)
+  if (!e) return null
+  return (
+    <span
+      className={`emblem ${className}`}
+      aria-hidden="true"
+      style={{ width: size, height: size, '--emblem': `url(/art/emblem-${e}.svg)`, color: ACCENTS[dept.accent].color } as React.CSSProperties}
+    />
   )
 }
