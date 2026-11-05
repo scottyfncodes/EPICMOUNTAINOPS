@@ -15,12 +15,12 @@ import {
 import '@xyflow/react/dist/base.css'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useBlocker, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import type { EdgeKind, FlowEdge, FlowNode, NodeKind, Workflow } from '../../shared/types'
+import type { EdgeKind, FlowNode, NodeKind, Workflow } from '../../shared/types'
 import { validateWorkflowGraph } from '../../shared/validate'
 import { EntityEditor, HistoryPanel } from '../components/Editor'
 import { Icon } from '../components/Icon'
 import { Sheet } from '../components/Sheet'
-import { Emblem, NodeGlyph, RefChip, StatusBadge, StatusGlyph } from '../components/ui'
+import { Emblem, NodeGlyph, StatusBadge, StatusGlyph } from '../components/ui'
 import { autoLayout, flowOrder, NODE_SIZE, needsLayout } from '../lib/layout'
 import { ACCENTS, hrefFor, NODE_META, relTime, STATUS_META } from '../lib/meta'
 import { useCaptureTarget } from '../lib/capture'
@@ -29,6 +29,7 @@ import { useMediaQuery } from '../lib/useMediaQuery'
 import { NotFound } from '../pages/NotFound'
 import { edgeTypes, type OpsRFEdge } from './edges'
 import { nodeTypes, type OpsRFNode } from './nodes'
+import { Guide } from './Guide'
 import { EdgeEditor, NodeDetail, NodeEditor, WorkflowInfo } from './Panels'
 import { effectiveStatus, lensMark, LENSES, routeEdge, systemsInWorkflow, type Lens } from './routing'
 import { clearStoredDraft, readStoredDraft, useDraft } from './useDraft'
@@ -72,14 +73,18 @@ function ExplorerInner({ id }: { id: string }) {
   const location = useLocation()
   const [params, setParams] = useSearchParams()
   const rf = useReactFlow()
-  const isMobile = useMediaQuery('(max-width: 899px)')
+  const narrow = useMediaQuery('(max-width: 899px)')
+  // Phones on their side: the panel docks beside the map instead of covering it.
+  const shortLandscape = useMediaQuery('(orientation: landscape) and (max-height: 500px)')
+  const isMobile = narrow && !shortLandscape
+  const panelWidth = shortLandscape ? Math.min(380, Math.round(window.innerWidth * 0.48)) : 440
   const wf = atlas.get<Workflow>(id)
   const cameFrom = (location.state as { from?: CameFrom } | null)?.from
 
   const { draft, dirty, update, undo, redo, reset, canUndo, canRedo, getCurrent, isDirty } = useDraft(wf && wf.type === 'workflow' ? prepare(wf) : null)
   const [restored, setRestored] = useState<string | null>(null)
   const [editing, setEditing] = useState(params.get('edit') === '1' && canEdit)
-  const [view, setView] = useState<'map' | 'steps'>('map')
+  const [view, setView] = useState<'map' | 'guide'>(params.get('view') === 'guide' ? 'guide' : 'map')
   const [panel, setPanel] = useState<'none' | 'info'>('none')
   const [size, setSize] = useState<'half' | 'full'>('half')
   const [edgeSel, setEdgeSel] = useState<string | null>(null)
@@ -131,8 +136,9 @@ function ExplorerInner({ id }: { id: string }) {
   }, [wf?.updatedAt])
 
   useEffect(() => {
-    if (wf) pushRecent({ type: 'workflow', id: wf.id })
-  }, [wf?.id])
+    if (wf) pushRecent({ type: 'workflow', id: wf.id, ...(selectedId ? { nodeId: selectedId } : {}) })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wf?.id, selectedId])
 
   useEffect(() => {
     if (params.get('edit') === '1' && canEdit) setEditing(true)
@@ -185,11 +191,11 @@ function ExplorerInner({ id }: { id: string }) {
         const sheetPx = window.innerHeight * (size === 'full' ? 0.86 : 0.48)
         cy += sheetPx / 2 / z
       } else {
-        cx += 440 / 2 / z
+        cx += panelWidth / 2 / z
       }
       rf.setCenter(cx, cy, { zoom: z, duration: 450 })
     },
-    [draft, rf, isMobile, size],
+    [draft, rf, isMobile, size, panelWidth],
   )
 
   // Leave room for the controls (right) and the lens bar (bottom).
@@ -608,7 +614,7 @@ function ExplorerInner({ id }: { id: string }) {
   const dept = atlas.get(draft.departmentIds[0])
   const accent = dept?.type === 'department' ? ACCENTS[dept.accent].color : 'var(--glacier)'
   const backTo = dept ? hrefFor(dept) : '/workflows'
-  const panelOpen = Boolean(selected || edge || panel === 'info')
+  const panelOpen = Boolean((selected && view === 'map') || edge || panel === 'info')
   const here: CameFrom = { id: draft.id, code: draft.code, title: draft.title, nodeId: selectedId || undefined }
 
   return (
@@ -636,8 +642,8 @@ function ExplorerInner({ id }: { id: string }) {
             <button role="tab" aria-selected={view === 'map'} className={`seg__opt ${view === 'map' ? 'is-on' : ''}`} onClick={() => setView('map')} aria-label="Map view">
               <Icon name="map" size={18} />
             </button>
-            <button role="tab" aria-selected={view === 'steps'} className={`seg__opt ${view === 'steps' ? 'is-on' : ''}`} onClick={() => setView('steps')} aria-label="Step list view">
-              <Icon name="list" size={18} />
+            <button role="tab" aria-selected={view === 'guide'} className={`seg__opt ${view === 'guide' ? 'is-on' : ''}`} onClick={() => setView('guide')} aria-label="Field guide view">
+              <Icon name="book" size={18} />
             </button>
           </div>
           <button
@@ -796,7 +802,17 @@ function ExplorerInner({ id }: { id: string }) {
           )}
         </div>
       ) : (
-        <StepsList wf={draft} order={order} selectedId={selectedId} onSelect={select} />
+        <Guide
+          wf={draft}
+          order={order}
+          selectedId={selectedId}
+          from={here}
+          onShowOnMap={(nid) => {
+            setView('map')
+            select(nid)
+            setTimeout(() => centerOn(nid, { zoom: 1 }), 120)
+          }}
+        />
       )}
 
       {editing && (
@@ -843,7 +859,7 @@ function ExplorerInner({ id }: { id: string }) {
 
       {/* Step detail / editor */}
       <Sheet
-        open={Boolean(selected)}
+        open={Boolean(selected) && view === 'map'}
         onClose={() => select(null)}
         size={size}
         onSizeChange={setSize}
@@ -956,48 +972,6 @@ function StepNav({ order, current, onSelect }: { order: FlowNode[]; current: str
       <button className="btn btn--ghost" disabled={!next} onClick={() => next && onSelect(next.id)} aria-label="Next step">
         Next <Icon name="chevron" size={16} />
       </button>
-    </div>
-  )
-}
-
-function StepsList({ wf, order, selectedId, onSelect }: { wf: Workflow; order: FlowNode[]; selectedId: string | null; onSelect: (id: string) => void }) {
-  const byId = new Map(wf.nodes.map((n) => [n.id, n]))
-  return (
-    <div className="stepslist">
-      <ol>
-        {order.map((n, i) => {
-          const out = wf.edges.filter((e: FlowEdge) => e.source === n.id)
-          const st = effectiveStatus(n, wf)
-          return (
-            <li key={n.id} className={`steprow steprow--${n.kind} ${selectedId === n.id ? 'is-on' : ''}`}>
-              <button onClick={() => onSelect(n.id)}>
-                <span className="steprow__num mono">{String(i + 1).padStart(2, '0')}</span>
-                <NodeGlyph kind={n.kind} size={14} />
-                <span className="steprow__main">
-                  <span className="steprow__kind">{NODE_META[n.kind].label}</span>
-                  <span className="steprow__label">{n.label}</span>
-                  {out.length > 1 || out.some((e) => e.label) ? (
-                    <span className="steprow__out">
-                      {out.map((e) => (
-                        <span key={e.id}>
-                          {e.label ? `${e.label} → ` : '→ '}
-                          {byId.get(e.target)?.label}
-                        </span>
-                      ))}
-                    </span>
-                  ) : null}
-                  {n.kind === 'link' && n.linkWorkflowId && (
-                    <span className="steprow__link">
-                      <RefChip id={n.linkWorkflowId} />
-                    </span>
-                  )}
-                </span>
-                {n.kind !== 'start' && n.kind !== 'end' && n.kind !== 'parallel' && <StatusBadge status={st.status} compact inherited={st.inherited} />}
-              </button>
-            </li>
-          )
-        })}
-      </ol>
     </div>
   )
 }

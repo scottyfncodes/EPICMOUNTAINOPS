@@ -1,10 +1,10 @@
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import type { Department, Entity, Workflow } from '../../shared/types'
-import { Topo } from '../components/Art'
+import type { Entity, Workflow } from '../../shared/types'
 import { Icon } from '../components/Icon'
-import { Emblem, EmptyState, StatusBadge, StatusMeter, typeIcon } from '../components/ui'
-import { ACCENTS, hrefFor, needsAttention, relTime, TYPE_META } from '../lib/meta'
+import { RouteMap } from '../components/RouteMap'
+import { EmptyState, NodeGlyph, StatusBadge, StatusMeter, typeIcon } from '../components/ui'
+import { ACCENTS, hrefFor, NODE_META, relTime, TYPE_META } from '../lib/meta'
 import { readRecent, useAtlas } from '../lib/store'
 
 export function CommandCenter() {
@@ -19,14 +19,14 @@ export function CommandCenter() {
   const scored = useMemo(() => atlas.all.filter((e) => e.type !== 'note' && e.type !== 'source'), [atlas])
   const attention = useMemo(
     () =>
-      [...scored.filter((e) => e.status === 'outdated'), ...scored.filter((e) => e.status === 'unverified' && e.type === 'workflow')].slice(0, 5),
+      [...scored.filter((e) => e.status === 'outdated'), ...scored.filter((e) => e.status === 'unverified' && e.type === 'workflow')].slice(0, 3),
     [scored],
   )
-  const recentlyAdded = useMemo(() => [...atlas.all].filter((e) => e.type !== 'source').sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 5), [atlas])
+  const recentlyAdded = useMemo(() => [...atlas.all].filter((e) => e.type !== 'source').sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 3), [atlas])
   const recent = readRecent()
     .map((r) => ({ r, e: atlas.get(r.id) }))
     .filter((x) => x.e)
-    .slice(0, 5)
+    .slice(1, 4) // the most recent one is the "pick up where you left off" card
 
   return (
     <div className="page page--command">
@@ -40,13 +40,16 @@ export function CommandCenter() {
             <span>Ops</span>
           </h1>
           <p className="masthead__sub">How the rental floor, the shop and the systems behind them fit together — one workflow at a time.</p>
+          <p className="stats-line mono" aria-hidden="true">
+            {workflows.length} workflows · {steps} steps · {systems.length} systems · {glossary.length} terms
+          </p>
           <dl className="stats">
             <div>
               <dt>Workflows</dt>
               <dd>{workflows.length}</dd>
             </div>
             <div>
-              <dt>Steps mapped</dt>
+              <dt>Steps</dt>
               <dd>{steps}</dd>
             </div>
             <div>
@@ -66,21 +69,19 @@ export function CommandCenter() {
         </div>
       </section>
 
+      <Resume />
+
       <section className="section">
         <header className="section__head">
           <div>
-            <div className="kicker">01 · Departments</div>
-            <h2 className="section__title">The operation</h2>
+            <div className="kicker">01 · The operation</div>
+            <h2 className="section__title">How work moves</h2>
           </div>
           <Link to="/departments" className="textlink">
-            All departments <Icon name="chevron" size={14} />
+            Departments <Icon name="chevron" size={14} />
           </Link>
         </header>
-        <div className="deptgrid">
-          {atlas.departments.map((d, i) => (
-            <DepartmentCard key={d.id} dept={d} workflows={atlas.workflowsForDepartment(d.id)} index={i} />
-          ))}
-        </div>
+        <RouteMap />
       </section>
 
       <section className="section">
@@ -135,7 +136,7 @@ export function CommandCenter() {
             <StatusMeter items={scored} />
           </div>
           <ul className="rowlist">
-            {questions.slice(0, 3).map((q) => (
+            {questions.slice(0, 2).map((q) => (
               <li key={q.id}>
                 <Link to={`/review#${q.id}`} className="rowlink">
                   <Icon name="question" size={18} className="rowlink__icon rowlink__icon--signal" />
@@ -171,8 +172,8 @@ export function CommandCenter() {
               ))}
             </ul>
           ) : (
-            <EmptyState icon="eye" title="Nothing viewed yet">
-              Workflows and entries you open will appear here.
+            <EmptyState icon="eye" title="Nothing else viewed yet">
+              Workflows and entries you open will appear here, newest first.
             </EmptyState>
           )}
           <h3 className="subhead">Recently added & updated</h3>
@@ -189,35 +190,29 @@ export function CommandCenter() {
   )
 }
 
-function DepartmentCard({ dept, workflows, index }: { dept: Department; workflows: Workflow[]; index: number }) {
-  const steps = workflows.reduce((n, w) => n + w.nodes.length, 0)
-  const open = workflows.filter(needsAttention).length
+/** "Pick up where you left off": the last workflow and the exact step you were on. */
+function Resume() {
+  const atlas = useAtlas()
+  const recent = readRecent()
+  const last = recent.map((r) => ({ r, w: atlas.get<Workflow>(r.id) })).find((x) => x.r.type === 'workflow' && x.w?.type === 'workflow')
+  if (!last || !last.w) return null
+  const w = last.w
+  const node = last.r.nodeId ? w.nodes.find((n) => n.id === last.r.nodeId) : undefined
+  const dept = atlas.get(w.departmentIds[0])
+  const accent = dept?.type === 'department' ? ACCENTS[dept.accent].color : 'var(--glacier)'
   return (
-    <Link to={hrefFor(dept)} viewTransition className="deptcard enter" style={{ '--accent': ACCENTS[dept.accent].color, '--i': index } as React.CSSProperties}>
-      <Topo seed={dept.id} className="deptcard__topo" />
-      <Emblem dept={dept} size={56} className="deptcard__emblem" />
-      <div className="deptcard__top">
-        <span className="deptcard__code">{dept.code}</span>
-        <StatusBadge status={dept.status} compact />
-      </div>
-      <h3 className="deptcard__title">{dept.title}</h3>
-      <p className="deptcard__tag">{dept.tagline}</p>
-      <dl className="deptcard__stats">
-        <div>
-          <dt>Workflows</dt>
-          <dd>{workflows.length}</dd>
-        </div>
-        <div>
-          <dt>Steps</dt>
-          <dd>{steps}</dd>
-        </div>
-        <div>
-          <dt>To verify</dt>
-          <dd className={open ? 'is-attn' : ''}>{open}</dd>
-        </div>
-      </dl>
-      <span className="deptcard__go" aria-hidden="true">
-        <Icon name="arrowRight" size={18} />
+    <Link to={hrefFor(w, node?.id)} className="resume" style={{ '--accent': accent } as React.CSSProperties} viewTransition>
+      <span className="resume__kicker">Pick up where you left off · {relTime(last.r.at)}</span>
+      <span className="resume__title">
+        <span className="mono">{w.code}</span> {w.title}
+      </span>
+      {node && (
+        <span className="resume__step">
+          <NodeGlyph kind={node.kind} size={12} /> {NODE_META[node.kind].label}: {node.label}
+        </span>
+      )}
+      <span className="resume__go" aria-hidden="true">
+        <Icon name="arrowRight" size={20} />
       </span>
     </Link>
   )

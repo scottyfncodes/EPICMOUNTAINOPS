@@ -2,8 +2,9 @@
    Workflow Explorer — v2
    ========================================================================== */
 
-/* ---------- Paper "field manual page" theme (detail panels) ---------- */
-.sheet--page {
+/* ---------- Paper "field manual page" theme (detail panels, guide) ---------- */
+.sheet--page,
+.paper {
   --ink: #f4f0e6;
   --ink-2: #f4f0e6;
   --ink-3: #e9e3d5;
@@ -32,56 +33,70 @@
   border-color: rgba(27, 32, 35, 0.3);
   color-scheme: light;
 }
-.sheet--page .sheet__head {
+.sheet--page .sheet__head ,
+.paper .sheet__head {
   background:
     repeating-linear-gradient(90deg, transparent 0 7px, rgba(27, 32, 35, 0.06) 7px 8px) bottom / 100% 1px no-repeat;
 }
-.sheet--page .sheet__title {
+.sheet--page .sheet__title ,
+.paper .sheet__title {
   font-size: 23px;
   font-variation-settings: 'wdth' 80;
   letter-spacing: -0.005em;
 }
-.sheet--page .sheet__foot {
+.sheet--page .sheet__foot ,
+.paper .sheet__foot {
   background: #ece6d8;
 }
-.sheet--page .btn--primary {
+.sheet--page .btn--primary ,
+.paper .btn--primary {
   background: #1b2023;
   color: #f4f0e6;
 }
-.sheet--page .btn--primary:hover:not(:disabled) {
+.sheet--page .btn--primary:hover:not(:disabled) ,
+.paper .btn--primary:hover:not(:disabled) {
   background: #000;
 }
-.sheet--page .sheet__grip span {
+.sheet--page .sheet__grip span ,
+.paper .sheet__grip span {
   background: rgba(27, 32, 35, 0.25);
 }
-.sheet--page .banner--warning {
+.sheet--page .banner--warning ,
+.paper .banner--warning {
   color: #3a1d0b;
 }
-.sheet--page .gloss {
+.sheet--page .gloss ,
+.paper .gloss {
   text-decoration-color: #8a8d2a;
 }
-.sheet--page .gloss:hover {
+.sheet--page .gloss:hover ,
+.paper .gloss:hover {
   color: #4f5214;
 }
-.sheet--page .handoff {
+.sheet--page .handoff ,
+.paper .handoff {
   background: #1b2023;
   color: #f4f0e6;
   --paper-dim: #c3beb2;
   --paper-mute: #a7a397;
 }
-.sheet--page .handoff:hover {
+.sheet--page .handoff:hover ,
+.paper .handoff:hover {
   background: #000;
 }
-.sheet--page .prose {
+.sheet--page .prose ,
+.paper .prose {
   color: #2b3135;
 }
-.sheet--page .field__label {
+.sheet--page .field__label ,
+.paper .field__label {
   color: #6b6f70;
 }
 .sheet--page mark {
   background: rgba(47, 102, 128, 0.18);
 }
-.sheet--page .sglyph path[stroke='var(--ink)'] {
+.sheet--page .sglyph path[stroke='var(--ink)'] ,
+.paper .sglyph path[stroke='var(--ink)'] {
   stroke: #f4f0e6;
 }
 

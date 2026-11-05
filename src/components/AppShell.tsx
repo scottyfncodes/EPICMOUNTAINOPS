@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-do
 import { CaptureProvider, useCapture } from '../lib/capture'
 import { useStore } from '../lib/store'
 import { CaptureSheet } from './Capture'
+import { GlossaryPeekProvider } from './GlossaryPeek'
 import { Icon, type IconName } from './Icon'
 import { Sheet } from './Sheet'
 
@@ -37,7 +38,9 @@ export function Wordmark({ compact = false }: { compact?: boolean }) {
 export function AppShell() {
   return (
     <CaptureProvider>
-      <Shell />
+      <GlossaryPeekProvider>
+        <Shell />
+      </GlossaryPeekProvider>
     </CaptureProvider>
   )
 }

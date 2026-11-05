@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import type { AccentKey, Entity, EntityType, GlossaryEntry, NodeKind, Status } from '../../shared/types'
 import { ACCENTS, hrefFor, NODE_META, STATUS_META, TYPE_META } from '../lib/meta'
 import { useAtlas } from '../lib/store'
+import { useGlossaryPeek } from './GlossaryPeek'
 import { Icon, type IconName } from './Icon'
 
 /* ------------------------------------------------------------------ */
@@ -261,6 +262,7 @@ function useGlossaryMatcher(skipId?: string) {
 /** Renders plain text, turning glossary terms into links (first occurrence of each). */
 export function RichText({ text, skipGlossaryId, as: Tag = 'p' }: { text?: string; skipGlossaryId?: string; as?: 'p' | 'span' | 'div' }) {
   const matcher = useGlossaryMatcher(skipGlossaryId)
+  const peek = useGlossaryPeek()
   if (!text) return null
   if (!matcher) return <Tag className="prose">{text}</Tag>
   const out: ReactNode[] = []
@@ -273,7 +275,19 @@ export function RichText({ text, skipGlossaryId, as: Tag = 'p' }: { text?: strin
     const i = m.index!
     out.push(text.slice(last, i))
     out.push(
-      <Link key={i} to={hrefFor(hit.entry)} viewTransition className="gloss" title={hit.entry.definition}>
+      <Link
+        key={i}
+        to={hrefFor(hit.entry)}
+        viewTransition
+        className="gloss"
+        aria-haspopup="dialog"
+        onClick={(e) => {
+          // Plain tap: show the definition in place. Modified clicks open the entry as usual.
+          if (!peek || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+          e.preventDefault()
+          peek(hit.entry, e.currentTarget)
+        }}
+      >
         {m[0]}
       </Link>,
     )

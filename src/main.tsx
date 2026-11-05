@@ -13,6 +13,7 @@ import './styles/app.css'
 import './styles/explorer.css'
 import './styles/capture.css'
 import './styles/review.css'
+import './styles/atlas.css'
 
 // Heavier, less-visited screens load on demand.
 const WorkflowExplorer = lazy(() => import('./explorer/Explorer').then((m) => ({ default: m.WorkflowExplorer })))

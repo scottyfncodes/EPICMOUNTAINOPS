@@ -181,7 +181,7 @@ async function apiSuite(base) {
   ok('non-image uploads refused', [400, 415].includes((await api(base, '/api/images', jsonPost({ dataUrl: 'data:text/html;base64,PGgxPg==' }))).status))
 }
 
-const ROUTES = ['/', '/departments', '/departments/dept-ski', '/workflows', '/workflows/wf-ski-intake', '/workflows/wf-ski-intake?node=info', '/systems', '/systems/sys-reservations', '/equipment', '/glossary', '/glossary/gl-din', '/review', '/review/gaps', '/review/integrity', '/search?q=boot', '/add']
+const ROUTES = ['/', '/departments', '/departments/dept-ski', '/workflows', '/workflows/wf-ski-intake', '/workflows/wf-ski-intake?node=info', '/workflows/wf-ski-intake?view=guide', '/systems', '/systems/sys-reservations', '/equipment', '/glossary', '/glossary/gl-din', '/review', '/review/gaps', '/review/integrity', '/search?q=boot', '/add']
 
 async function layoutSuite(browser, base) {
   current = 'iPhone layouts'
@@ -268,10 +268,83 @@ async function explorerSuite(browser, base) {
   const unknownHere = repair.nodes.filter((n) => n.kind === 'unknown').length
   ok('gaps lens flags unknown steps', (await page.locator('.opsnode--unknown.tone--gap').count()) === unknownHere, String(unknownHere))
   await page.getByRole('radio', { name: 'Flow', exact: true }).tap()
-  await page.locator('button[aria-label="Step list view"]').tap()
-  ok('step list view', (await page.locator('.steprow').count()) === repair.nodes.length, String(repair.nodes.length))
+  await page.locator('button[aria-label="Field guide view"]').tap()
+  await page.waitForTimeout(300)
+  ok('guide view lists every step in order', (await page.locator('.guidestep, .guidemark').count()) === repair.nodes.length, String(repair.nodes.length))
+  ok('guide groups steps into Do / Know / Check', (await page.locator('.guide .dkc--check').count()) > 0)
   ok('no console errors', errors.length === 0, errors.slice(0, 3).join(' | '))
   await ctx.close()
+}
+
+async function learningSuite(browser, base) {
+  current = 'Learning & navigation'
+  console.log('\n' + current)
+  const all = await content(base)
+  const wfs = all.filter((e) => e.type === 'workflow')
+  const { ctx, page, errors } = await newPage(browser, 'iPhone 14 Pro', base)
+
+  // route map on the home screen mirrors the hand-off data
+  await page.goto(base + '/', { waitUntil: 'networkidle' })
+  ok('route map shows every workflow once', (await page.locator('.routemap .station').count()) === wfs.length, `${wfs.length} workflows`)
+  const handoffs = wfs.flatMap((w) => w.nodes.filter((n) => n.kind === 'link' && n.linkWorkflowId).map((n) => [w, wfs.find((x) => x.id === n.linkWorkflowId)]))
+  const crossing = handoffs.filter(([a, b]) => b && a.departmentIds[0] !== b.departmentIds[0]).length
+  ok('route map interchanges match cross-department hand-offs', (await page.locator('.routemap .xfer--out').count()) === crossing, String(crossing))
+  ok('route map breaks where no hand-off exists', (await page.locator('.routemap .route__gap').count()) >= 1)
+  ok('route map fits in the first screen', (await page.locator('.routemap').boundingBox()).y < page.viewportSize().height)
+
+  // resume where you left off
+  await page.goto(base + '/workflows/wf-ski-boot-fit?node=bsl', { waitUntil: 'networkidle' })
+  await page.waitForTimeout(500)
+  await page.goto(base + '/', { waitUntil: 'networkidle' })
+  const resume = page.locator('.resume')
+  ok('home offers to resume the exact step', (await resume.getAttribute('href')) === '/workflows/wf-ski-boot-fit?node=bsl')
+  ok('resume card is above the fold', (await resume.boundingBox()).y + 40 < page.viewportSize().height)
+
+  // department hub: each workflow once on the line, topics as an index
+  await page.goto(base + '/departments/dept-ski', { waitUntil: 'networkidle' })
+  const skiWf = wfs.filter((w) => w.departmentIds[0] === 'dept-ski')
+  const stationHrefs = await page.locator('.routemap .station__link').evaluateAll((els) => els.map((e) => e.getAttribute('href')))
+  ok('hub line lists each workflow exactly once', stationHrefs.length === skiWf.length && new Set(stationHrefs).size === stationHrefs.length, `${stationHrefs.length}`)
+  const ski = all.find((e) => e.id === 'dept-ski')
+  ok('hub keeps every topic', (await page.locator('.topic').count()) >= ski.sections.length)
+
+  // guide: decisions jump to the right step; show on map selects it
+  await page.goto(base + '/workflows/wf-ski-intake?view=guide', { waitUntil: 'networkidle' })
+  await page.waitForTimeout(400)
+  await page.locator('.choice', { hasText: 'Yes' }).first().tap()
+  await page.waitForTimeout(700)
+  const top = await page.locator('#g-lookup').boundingBox()
+  ok('guide choice jumps to its step', top.y < 260, `y=${Math.round(top.y)}`)
+  await page.locator('#g-lookup .guidestep__foot button', { hasText: 'Show on map' }).tap()
+  await page.waitForTimeout(800)
+  ok('show on map opens that step on the map', page.url().includes('node=lookup') && (await page.locator('.react-flow__node.selected[data-id="lookup"]').count()) === 1)
+  ok('step panel organises Do / Know / Check', (await page.locator('.sheet--explorer .dkc--do').count()) === 1)
+
+  // glossary terms explain themselves in place
+  await page.goto(base + '/workflows/wf-ski-boot-fit?node=bsl', { waitUntil: 'networkidle' })
+  await page.waitForTimeout(600)
+  const here = page.url()
+  await page.locator('.sheet--explorer a.gloss').first().tap()
+  await page.waitForTimeout(300)
+  ok('glossary term opens a definition without leaving the map', page.url() === here && (await page.locator('.peek__def').isVisible()))
+  await page.keyboard.press('Escape')
+  ok('definition closes', !(await page.locator('.peek').isVisible()))
+  ok('no console errors', errors.length === 0, errors.slice(0, 3).join(' | '))
+  await ctx.close()
+
+  // phones on their side: the panel docks beside the map
+  for (const dev of ['iPhone SE landscape', 'iPhone 14 Pro landscape', 'iPhone 15 Pro Max landscape']) {
+    const l = await newPage(browser, dev, base)
+    await l.page.goto(base + '/workflows/wf-ski-boot-fit?node=bsl', { waitUntil: 'networkidle' })
+    await l.page.waitForTimeout(800)
+    const r = await l.page.evaluate(() => {
+      const s = document.querySelector('.sheet--explorer').getBoundingClientRect()
+      const n = document.querySelector('.react-flow__node.selected').getBoundingClientRect()
+      return { beside: n.right <= s.left + 4 && n.left >= 0, tall: s.height > innerHeight * 0.6, overflow: document.documentElement.scrollWidth > innerWidth }
+    })
+    ok(`${dev}: step panel docks beside the map`, r.beside && r.tall && !r.overflow, JSON.stringify(r))
+    await l.ctx.close()
+  }
 }
 
 async function editingSuite(browser, base) {
@@ -479,7 +552,7 @@ async function a11ySuite(browser, base) {
   const axe = require('axe-core').source
   // The app's CSP (correctly) blocks injected inline scripts; only this audit context bypasses it.
   const { ctx, page } = await newPage(browser, 'iPhone 14 Pro', base, { bypassCSP: true })
-  for (const r of ['/', '/departments/dept-jr-trades', '/workflows', '/workflows/wf-ski-intake?node=has-res', '/systems/sys-rental-record', '/glossary', '/review', '/search?q=bsl']) {
+  for (const r of ['/', '/departments', '/departments/dept-jr-trades', '/workflows', '/workflows/wf-ski-intake?node=has-res', '/workflows/wf-ski-intake?view=guide', '/systems/sys-rental-record', '/glossary', '/review', '/search?q=bsl']) {
     await page.goto(base + r, { waitUntil: 'networkidle' })
     await page.waitForTimeout(500)
     await page.addScriptTag({ content: axe })
@@ -538,6 +611,7 @@ async function main() {
     await apiSuite(base)
     await layoutSuite(browser, base)
     await explorerSuite(browser, base)
+    await learningSuite(browser, base)
     await editingSuite(browser, base)
     await captureSuite(browser, base)
     await reviewSuite(browser, base)

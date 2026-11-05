@@ -8,7 +8,8 @@ import { ACCENTS, fmtDate, hrefFor, NODE_META } from '../lib/meta'
 import { useAtlas } from '../lib/store'
 import { NotesBox } from '../pages/Reference'
 import type { CameFrom } from './Explorer'
-import { effectiveStatus, stepGaps, systemsInWorkflow } from './routing'
+import { stepGaps, systemsInWorkflow } from './routing'
+import { DoKnowCheck } from './StepContent'
 
 const NOT_CAPTURED: [keyof FlowNode, string][] = [
   ['what', 'What happens'],
@@ -43,8 +44,6 @@ export function NodeDetail({
   const targetDept = target ? atlas.get(target.departmentIds[0]) : undefined
   const missing = node.kind === 'start' || node.kind === 'end' || node.kind === 'parallel' ? [] : NOT_CAPTURED.filter(([k]) => !node[k])
   const notes = atlas.notesFor('workflow', wf.id, node.id)
-  const st = effectiveStatus(node, wf)
-
   return (
     <div className="nodedetail">
       {(node.kind === 'warning' || node.kind === 'unknown') && (
@@ -55,11 +54,6 @@ export function NodeDetail({
             {node.kind === 'warning' ? 'Read before continuing.' : 'This is a gap in the map — capture it from an authorized source.'}
           </div>
         </div>
-      )}
-      {st.inherited && node.kind !== 'start' && node.kind !== 'end' && node.kind !== 'parallel' && (
-        <p className="inherit-note">
-          Status inherited from the workflow — this step hasn’t been reviewed on its own.
-        </p>
       )}
 
       {target && (
@@ -78,15 +72,7 @@ export function NodeDetail({
       )}
       {node.kind === 'link' && !target && <p className="error-text">The workflow this hands off to hasn’t been chosen, or was deleted.</p>}
 
-      <Field label="What happens">{node.what && <RichText text={node.what} />}</Field>
-      <Field label="Why it happens">{node.why && <RichText text={node.why} />}</Field>
-      <Field label="Who is responsible">{node.who && <RichText text={node.who} />}</Field>
-      {node.systemIds?.length || node.equipmentIds?.length ? (
-        <Field label="Systems & equipment involved">
-          <RefChips ids={[...(node.systemIds || []), ...(node.equipmentIds || [])]} />
-        </Field>
-      ) : null}
-      <Field label="Information required">{node.info && <RichText text={node.info} />}</Field>
+      <DoKnowCheck node={node} wf={wf} />
 
       <div className="field">
         <div className="field__label">What happens next</div>
@@ -115,8 +101,6 @@ export function NodeDetail({
         </div>
       </div>
 
-      <Field label="Common mistakes">{node.mistakes && <RichText text={node.mistakes} />}</Field>
-      <Field label="Important considerations">{node.considerations && <RichText text={node.considerations} />}</Field>
       {node.relatedWorkflowIds?.length ? (
         <Field label="Related workflows">
           <RefChips ids={node.relatedWorkflowIds} />
