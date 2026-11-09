@@ -2,11 +2,14 @@
  * Content integrity rules shared by the API (authoritative) and the client
  * (early feedback). Pure functions — unit tested in tests/unit.
  */
-import type { Entity, EntityType, FlowEdge, FlowNode, NodeKind, Source, Status, Workflow } from './types'
+import type { BodyLandmark, CalloutKind, Entity, EntityType, FlowEdge, FlowNode, NodeKind, Source, Status, Workflow } from './types'
 
 export const ENTITY_TYPES: EntityType[] = ['department', 'workflow', 'system', 'equipment', 'glossary', 'note', 'source']
 export const STATUS_VALUES: Status[] = ['verified', 'observed', 'unverified', 'outdated']
 export const NODE_KINDS: NodeKind[] = ['start', 'step', 'decision', 'warning', 'parallel', 'link', 'unknown', 'end']
+export const CALLOUT_KINDS: CalloutKind[] = ['tip', 'estimate', 'published', 'safety']
+/** Lowest to highest — order matters for sizing references. */
+export const BODY_LANDMARKS: BodyLandmark[] = ['chest', 'collarbone', 'chin', 'nose', 'eyes', 'forehead', 'top']
 export const ID_RE = /^[a-z0-9][a-z0-9_-]{0,79}$/i
 export const MAX_NODES = 400
 
@@ -49,6 +52,24 @@ export function validateWorkflowGraph(nodes: FlowNode[], edges: FlowEdge[]): str
     if (!isStr(n.label) || !n.label.trim()) return 'Every step needs a name.'
     if (n.label.length > 300) return 'A step name is too long.'
     if (n.status !== undefined && !STATUS_VALUES.includes(n.status)) return `Step “${n.label}” has an invalid status.`
+    if (n.phase !== undefined && (!isStr(n.phase) || n.phase.length > 80)) return `Step “${n.label}” has an invalid stage name.`
+    if (n.callouts !== undefined) {
+      if (!Array.isArray(n.callouts) || n.callouts.length > 12) return `Step “${n.label}” has too many callouts.`
+      for (const c of n.callouts) {
+        if (!c || !CALLOUT_KINDS.includes(c.kind)) return `A callout on “${n.label}” has an unknown type.`
+        if (!isStr(c.text) || !c.text.trim() || c.text.length > 1000) return `A callout on “${n.label}” needs text (up to 1000 characters).`
+        if (c.url !== undefined && c.url !== '' && !isSafeUrl(c.url)) return `A callout link on “${n.label}” must be a full https:// address.`
+      }
+    }
+    if (n.sizing !== undefined) {
+      if (!Array.isArray(n.sizing) || n.sizing.length > 8) return `Step “${n.label}” has an invalid sizing reference.`
+      for (const b of n.sizing) {
+        if (!b || !isStr(b.label) || !b.label.trim()) return `A sizing band on “${n.label}” needs a label.`
+        const lo = BODY_LANDMARKS.indexOf(b.from)
+        const hi = BODY_LANDMARKS.indexOf(b.to)
+        if (lo < 0 || hi < 0 || lo >= hi) return `Sizing band “${b.label}” must run from a lower to a higher landmark.`
+      }
+    }
   }
   const edgeIds = new Set<string>()
   for (const e of edges) {
@@ -59,6 +80,16 @@ export function validateWorkflowGraph(nodes: FlowNode[], edges: FlowEdge[]): str
     if (e.source === e.target) return 'A step cannot connect to itself.'
   }
   return null
+}
+
+/** External links are https only — never javascript:, data: or plain http. */
+export function isSafeUrl(url: unknown): url is string {
+  if (!isStr(url) || url.length > 500) return false
+  try {
+    return new URL(url).protocol === 'https:'
+  } catch {
+    return false
+  }
 }
 
 /** Throws ValidationError with a user-readable message. */
@@ -76,6 +107,7 @@ export function validateEntityShape(input: unknown): Entity {
     const problem = validateWorkflowGraph((e as Workflow).nodes, (e as Workflow).edges)
     if (problem) throw new ValidationError(problem)
   }
+  if (e.type === 'source' && e.url !== undefined && e.url !== '' && !isSafeUrl(e.url)) throw new ValidationError('A source link must be a full https:// address.')
   if (JSON.stringify(e).length > 1_000_000) throw new ValidationError('Entity is too large.')
   return e as Entity
 }

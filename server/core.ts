@@ -1,7 +1,7 @@
 import { neon, type NeonQueryFunction } from '@neondatabase/serverless'
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { SEED_VERSION, seedEntities } from '../shared/seed.js'
+import { SEED_UPDATES, SEED_VERSION, seedEntities } from '../shared/seed.js'
 import type { Entity, ImageMeta, VersionRecord } from '../shared/types.js'
 import { ID_RE, validateEntityShape, ValidationError, verificationProblem } from '../shared/validate.js'
 
@@ -200,6 +200,8 @@ export function ensureReady(): Promise<void> {
           sql.query(`INSERT INTO app_meta (key, value) VALUES ('seed_version', $1) ON CONFLICT (key) DO NOTHING`, [JSON.stringify(SEED_VERSION)]),
         )
         await sql.transaction(queries)
+      } else if (Number((rows[0] as any).value) < SEED_VERSION) {
+        await applySeedUpdates(Number((rows[0] as any).value))
       }
     })().catch((err) => {
       ready = null
@@ -207,6 +209,47 @@ export function ensureReady(): Promise<void> {
     })
   }
   return ready
+}
+
+/**
+ * Bring an existing database's starter content up to the current seed version
+ * without ever overwriting someone's work:
+ *  - new items are inserted;
+ *  - existing items are replaced only while untouched (no `rev`, which every
+ *    save through the API sets) and not deleted.
+ * One transaction; an advisory lock plus a version check inside every
+ * statement makes concurrent cold starts apply it exactly once.
+ */
+export async function applySeedUpdates(from: number): Promise<void> {
+  const sql = db()
+  const byId = new Map(seedEntities.map((e) => [e.id, e]))
+  const pending = `(SELECT (value #>> '{}')::int FROM app_meta WHERE key = 'seed_version') < $5::int`
+  const queries = [sql.query(`SELECT pg_advisory_xact_lock(7041977)`)]
+  for (let v = from + 1; v <= SEED_VERSION; v++) {
+    const step = SEED_UPDATES[v]
+    if (!step) continue
+    for (const id of step.ids) {
+      const e = byId.get(id)
+      if (!e) continue
+      queries.push(
+        sql.query(
+          `WITH up AS (
+             INSERT INTO entities (id, type, data, created_at, updated_at)
+             SELECT $1::text, $2::text, $3::jsonb, $4::timestamptz, $4::timestamptz WHERE ${pending}
+             ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at
+               WHERE entities.deleted_at IS NULL AND entities.data->>'rev' IS NULL AND entities.type = EXCLUDED.type
+             RETURNING id, data
+           )
+           INSERT INTO entity_versions (entity_id, action, note, data) SELECT id, 'seed', $6::text, data FROM up`,
+          [e.id, e.type, JSON.stringify(e), e.updatedAt, v, step.note],
+        ),
+      )
+    }
+  }
+  queries.push(
+    sql.query(`UPDATE app_meta SET value = $1 WHERE key = 'seed_version' AND (value #>> '{}')::int < $2`, [JSON.stringify(SEED_VERSION), SEED_VERSION]),
+  )
+  await sql.transaction(queries)
 }
 
 /* ------------------------------------------------------------------ */

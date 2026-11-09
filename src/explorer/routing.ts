@@ -1,5 +1,5 @@
 import type { FlowEdge, FlowNode, Status, Workflow } from '../../shared/types'
-import { NODE_SIZE } from '../lib/layout'
+import { NODE_SIZE, nodeSize } from '../lib/layout'
 
 export type Side = 'top' | 'right' | 'bottom' | 'left'
 
@@ -27,6 +27,58 @@ export function routeEdge(src: FlowNode, tgt: FlowNode, direction: 'TB' | 'LR' =
   if (dx < -10) return { from: 'bottom', to: 'bottom' }
   if (fans && Math.abs(dy) > ss.h / 2) return { from: dy < 0 ? 'top' : 'bottom', to: 'left' }
   return { from: 'right', to: 'left' }
+}
+
+/**
+ * Route every connection, then make sure branches leaving the same decision or
+ * split never share a side: when several would leave from the bottom (their
+ * targets are stacked in one column), the nearest keeps the bottom and the
+ * others go round the side and enter their target from that side — so labels
+ * don't collide and lines don't run behind the step in between.
+ */
+export type Route = { from: Side; to: Side; /** How far a side route travels out, to clear steps in between. */ offset?: number }
+
+export function routeAll(nodes: FlowNode[], edges: FlowEdge[], direction: 'TB' | 'LR' = 'TB'): Map<string, Route> {
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+  const out = new Map<string, Route>()
+  for (const e of edges) {
+    const s = byId.get(e.source)
+    const t = byId.get(e.target)
+    if (s && t) out.set(e.id, routeEdge(s, t, direction))
+  }
+  const main: Side = direction === 'TB' ? 'bottom' : 'right'
+  const sides: Side[] = direction === 'TB' ? ['right', 'left'] : ['bottom', 'top']
+  const axis = (n: FlowNode) => (direction === 'TB' ? (n.y ?? 0) : (n.x ?? 0))
+  for (const src of nodes) {
+    if (src.kind !== 'decision' && src.kind !== 'parallel') continue
+    const mine = edges.filter((e) => e.source === src.id && e.kind !== 'loop' && out.get(e.id))
+    const stacked = mine.filter((e) => out.get(e.id)!.from === main).sort((a, b) => axis(byId.get(a.target)!) - axis(byId.get(b.target)!))
+    if (stacked.length < 2) continue
+    const free = sides.filter((side) => !mine.some((e) => out.get(e.id)!.from === side))
+    stacked.slice(1).forEach((e, i) => {
+      const side = free[i]
+      if (side) out.set(e.id, { from: side, to: side, offset: clearance(src, byId.get(e.target)!, side, nodes, direction) })
+    })
+  }
+  return out
+}
+
+/** Offset that takes a side route past every step lying between its two ends. */
+function clearance(src: FlowNode, tgt: FlowNode, side: Side, nodes: FlowNode[], direction: 'TB' | 'LR'): number {
+  const lo = (n: FlowNode) => (direction === 'TB' ? (n.y ?? 0) : (n.x ?? 0))
+  const len = (n: FlowNode) => (direction === 'TB' ? nodeSize(n).h : nodeSize(n).w)
+  const across = (n: FlowNode, far: boolean) => {
+    const start = direction === 'TB' ? (n.x ?? 0) : (n.y ?? 0)
+    return far ? start + (direction === 'TB' ? nodeSize(n).w : nodeSize(n).h) : start
+  }
+  const far = side === 'right' || side === 'bottom'
+  const a = lo(src) + len(src)
+  const b = lo(tgt)
+  const between = nodes.filter((n) => n !== src && n !== tgt && lo(n) < b && lo(n) + len(n) > a)
+  const edgeOf = (n: FlowNode) => across(n, far)
+  const base = far ? Math.max(edgeOf(src), edgeOf(tgt)) : Math.min(edgeOf(src), edgeOf(tgt))
+  const reach = between.reduce((m, n) => (far ? Math.max(m, edgeOf(n)) : Math.min(m, edgeOf(n))), base)
+  return Math.max(20, Math.abs(reach - base) + 22)
 }
 
 /* ------------------------------------------------------------------ */

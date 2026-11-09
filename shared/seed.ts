@@ -25,8 +25,13 @@ import type {
 } from './types'
 
 const T = '2026-11-04T12:00:00.000Z'
+/** Content v2 — Junior Trade employee field notes. */
+const T2 = '2026-11-09T12:00:00.000Z'
 
 const base = { status: 'unverified' as const, illustrative: true, createdAt: T, updatedAt: T, sourceIds: ['src-starter'] }
+/** First-hand employee field notes: Observed, never Verified, never illustrative. */
+const field = { status: 'observed' as const, illustrative: false, createdAt: T2, updatedAt: T2, sourceIds: ['src-jrt-field-notes'] }
+const JT_URL = 'https://www.epicmountaingear.com/pages/junior-trade'
 
 function n(id: string, kind: NodeKind, label: string, extra: Partial<FlowNode> = {}): FlowNode {
   return { id, kind, label, ...extra }
@@ -34,6 +39,9 @@ function n(id: string, kind: NodeKind, label: string, extra: Partial<FlowNode> =
 function e(source: string, target: string, kind: EdgeKind = 'normal', label?: string): FlowEdge {
   return { id: `${source}->${target}`, source, target, kind, ...(label ? { label } : {}) }
 }
+
+const ASTM_SAFETY =
+  'Safety-critical. Binding testing and documentation follow current approved shop and manufacturer procedures only. This atlas holds no release values, torque specifications, adjustment instructions or test requirements — never use it as that reference.'
 
 const SAFETY =
   'Safety-critical. This app does not describe how to perform this work. Follow only authorized training, manufacturer instructions and the procedures you have been certified on.'
@@ -50,6 +58,31 @@ const sources: Source[] = [
     title: 'Illustrative starter content',
     description:
       'Placeholder structure generated to make the app explorable. Not an official source. Replace or confirm each item with first-hand observation or authorized material.',
+    authorized: false,
+  },
+  {
+    ...field,
+    id: 'src-jrt-field-notes',
+    type: 'source',
+    kind: 'firsthand',
+    title: 'Employee field notes — Junior Trade counter',
+    date: '2026-11-09',
+    description:
+      'First-hand notes from an employee on how a Junior Trade fitting runs at the counter, with pro tips and approximate prices. Not an official procedure: prices are estimates, and safety-critical work must come from approved training.',
+    authorized: false,
+  },
+  {
+    ...field,
+    status: 'unverified',
+    sourceIds: [],
+    id: 'src-jrt-website',
+    type: 'source',
+    kind: 'document',
+    title: 'Junior Trade — public program page',
+    url: JT_URL,
+    date: '2026-11-09',
+    description:
+      'The public Junior Trade page describes trade-in credit of 50% of the original purchase price toward larger equipment. Public pages change — confirm eligibility, current pricing and terms in store before quoting them as policy.',
     authorized: false,
   },
 ]
@@ -131,6 +164,51 @@ const systems: System[] = [
     outputs: ['Item queued for repair'],
     whenUsed: 'When a return or inspection finds an issue.',
   },
+  {
+    ...field,
+    id: 'sys-jrt-checkin',
+    type: 'system',
+    kind: 'software',
+    title: 'Junior Trade check-in computer (name pending identification)',
+    summary: 'Where families are checked in and appointments are found.',
+    description:
+      'The computer system used at the Junior Trade counter to check guests in. Its product name and screens have not been identified yet. Field note: appointment details sometimes include the child’s height and weight, entered by the parent when booking.',
+    purpose: 'Check the family in and see what the parent entered when booking.',
+    departmentIds: ['dept-jr-trades'],
+    inputs: ['Guest / appointment lookup (exact fields not captured)'],
+    outputs: ['Checked-in guest', 'Appointment details — sometimes the child’s height and weight'],
+    whenUsed: 'Guest arrival, before fitting starts.',
+  },
+  {
+    ...field,
+    id: 'sys-jrt-parent-form',
+    type: 'system',
+    kind: 'software',
+    title: 'Parent form on the iPad (app pending identification)',
+    summary: 'The paperwork the parent completes on a shop iPad during fitting.',
+    description:
+      'A form opened on a shop iPad for the parent to complete while the child is fitted; the selected equipment is entered on it afterwards. The app name and the form’s fields have not been identified yet.',
+    purpose: 'Collect the parent’s paperwork and record the selected equipment.',
+    departmentIds: ['dept-jr-trades'],
+    inputs: ['Parent’s details (fields not captured)', 'Selected equipment'],
+    outputs: ['Completed parent paperwork'],
+    whenUsed: 'Started before boot sizing; finished when the iPad is retrieved and equipment entered.',
+  },
+  {
+    ...field,
+    id: 'sys-jrt-astm-record',
+    type: 'system',
+    kind: 'process',
+    title: 'ASTM authorization & signature record (format pending identification)',
+    summary: 'Where ASTM authorization, testing documentation and the parent’s final signature are recorded.',
+    description:
+      'Safety-critical documentation. Whether this is paper, the iPad form or another system has not been identified. Record it exactly as approved procedures require.',
+    purpose: 'Document that required binding testing and sign-offs are complete before release.',
+    departmentIds: ['dept-jr-trades'],
+    inputs: ['ASTM authorization / sign-off', 'Binding test documentation', 'Parent’s final ASTM signature'],
+    outputs: ['Complete documentation — required before equipment is released'],
+    whenUsed: 'After equipment entry, through to release.',
+  },
 ]
 
 /* ------------------------------------------------------------------ */
@@ -158,6 +236,7 @@ const equipment: Equipment[] = [
   eq('eq-foot-measure', 'Foot measuring device', 'Fitting tools', ['dept-ski', 'dept-snowboard'], 'Device used to measure foot length/width. Exact device unconfirmed.'),
   eq('eq-tuning-tools', 'Edge & base tuning tools', 'Shop tools', ['dept-jr-trades'], 'Files, stones, edge guides and similar hand or machine tools. Shop equipment list not yet captured.'),
   eq('eq-wax', 'Wax & waxing iron', 'Shop tools', ['dept-jr-trades'], 'Wax and iron used for base waxing.'),
+  { ...eq('eq-ipad', 'Shop iPad', 'Counter devices', ['dept-jr-trades'], 'A shop iPad used for the parent form during Junior Trade fittings.'), ...field, systemIds: ['sys-jrt-parent-form'] },
   eq('eq-base-repair', 'Base repair materials', 'Shop tools', ['dept-jr-trades'], 'Materials for filling base gouges (for example P-tex).'),
 ]
 
@@ -587,6 +666,272 @@ const workflows: Workflow[] = [
       e('pass', 'fix', 'no', 'No'),
     ],
   }),
+  /* ---------------- JUNIOR TRADE (employee field notes) ---------------- */
+  {
+    ...field,
+    type: 'workflow',
+    id: 'wf-jrt-fitting',
+    code: 'JRT-04',
+    title: 'Junior Trade fitting, ASTM & release',
+    summary:
+      'A family’s Junior Trade visit from arrival to release: check-in, boots, skis, trade-in value, equipment entry, ASTM and the final signature.',
+    trigger: 'A family arrives at the Junior Trade counter.',
+    outcome: 'Equipment released to the family after every mandatory procedure and signature is complete.',
+    source: 'Employee field notes, Nov 2026',
+    defaultView: 'guide',
+    departmentIds: ['dept-jr-trades'],
+    systemIds: ['sys-jrt-checkin', 'sys-jrt-parent-form', 'sys-inventory', 'sys-jrt-astm-record', 'sys-binding-reference'],
+    equipmentIds: ['eq-ski-boots', 'eq-skis', 'eq-ski-bindings', 'eq-ipad'],
+    nodes: [
+      n('start', 'start', 'Family arrives at the Junior Trade counter', { phase: 'Guest arrival' }),
+      n('appt', 'decision', 'Do they have an appointment?', {
+        phase: 'Guest arrival',
+        what: 'Ask the guest whether they booked an appointment.',
+        why: 'Booked appointments can already hold details you’ll need for sizing.',
+      }),
+      n('checkin-appt', 'step', 'Check in from the appointment', {
+        phase: 'Guest arrival',
+        what: 'Find the appointment and check the family in on the computer.',
+        systemIds: ['sys-jrt-checkin'],
+        callouts: [
+          {
+            kind: 'tip',
+            text: 'Appointment details sometimes include the child’s height and weight, entered by the parent when booking. Check there if the parent doesn’t know.',
+          },
+        ],
+      }),
+      n('checkin-walk', 'step', 'Check in without an appointment', {
+        phase: 'Guest arrival',
+        what: 'Check the family in on the computer.',
+        considerations: 'How guests without an appointment are entered hasn’t been captured yet.',
+        systemIds: ['sys-jrt-checkin'],
+        status: 'unverified',
+      }),
+      n('shoes', 'step', 'Shoes off · parent form ready', {
+        phase: 'Prepare for fitting',
+        what: 'Have the child take their shoes off. Grab an iPad and open the parent form.',
+        why: 'Starting the paperwork now means it’s finished by the time the equipment is chosen.',
+        systemIds: ['sys-jrt-parent-form'],
+        equipmentIds: ['eq-ipad'],
+      }),
+      n('split', 'parallel', 'Paperwork and sizing run together', { phase: 'Prepare for fitting' }),
+      n('form', 'step', 'Parent completes the form on the iPad', {
+        phase: 'Prepare for fitting',
+        what: 'Hand the iPad to the parent to complete the paperwork while you size boots.',
+        who: 'Parent or guardian',
+        info: 'The form’s exact fields haven’t been captured.',
+        systemIds: ['sys-jrt-parent-form'],
+        equipmentIds: ['eq-ipad'],
+      }),
+      n('boot-size', 'step', 'Determine the child’s boot size', {
+        phase: 'Boot fitting',
+        what: 'Work out the child’s boot size.',
+        considerations: 'How size is measured here (device and sizing scale) hasn’t been captured.',
+        equipmentIds: ['eq-ski-boots'],
+      }),
+      n('boot-stock', 'decision', 'Is that boot size in stock?', {
+        phase: 'Boot fitting',
+        what: 'Check available inventory for the size.',
+        systemIds: ['sys-inventory'],
+      }),
+      n('boot-out', 'link', 'Boots out of stock — offer the options', {
+        phase: 'Boot fitting',
+        linkWorkflowId: 'wf-jrt-out-of-stock',
+        embed: true,
+        callouts: [
+          {
+            kind: 'estimate',
+            text: 'New boots run about $45 more than the base package (about $175). Confirm current pricing before quoting.',
+          },
+        ],
+      }),
+      n('goldilocks', 'step', 'Goldilocks fit check', {
+        phase: 'Boot fitting',
+        what: 'Have the child try the boots on and check the fit is just right — not too big, not too small — including where the big toe sits relative to the front of the boot.',
+        why: 'A boot that fits properly is the starting point for everything after it.',
+        considerations: 'No exact clearance measurement or formal fit standard has been captured. Follow approved fitting training.',
+        equipmentIds: ['eq-ski-boots'],
+      }),
+      n('fit-ok', 'decision', 'Is the fit just right?', { phase: 'Boot fitting' }),
+      n('ski-size', 'step', 'Size the skis', {
+        phase: 'Ski sizing',
+        what: 'Choose a ski length by the child’s ability, using where the ski tip reaches on the child.',
+        info: 'Ability level: beginner, intermediate or advanced.',
+        considerations: 'A general field-note range — not a substitute for approved equipment-selection procedures.',
+        equipmentIds: ['eq-skis'],
+        sizing: [
+          { label: 'Beginner', from: 'collarbone', to: 'chin' },
+          { label: 'Intermediate', from: 'chin', to: 'nose' },
+          { label: 'Advanced', from: 'nose', to: 'top' },
+        ],
+      }),
+      n('ski-stock', 'decision', 'Are skis in that length in stock?', {
+        phase: 'Ski sizing',
+        what: 'Check available inventory for the length.',
+        systemIds: ['sys-inventory'],
+      }),
+      n('ski-out', 'link', 'Skis out of stock — offer the options', {
+        phase: 'Ski sizing',
+        linkWorkflowId: 'wf-jrt-out-of-stock',
+        embed: true,
+        callouts: [
+          {
+            kind: 'estimate',
+            text: 'New skis run about $100 more than the base package. Confirm current pricing before quoting.',
+          },
+        ],
+      }),
+      n('tradein', 'step', 'Explain trade-in value', {
+        phase: 'Trade-in value',
+        what: 'Explain that buying new keeps strong trade-in value for later, when the child moves up to larger equipment.',
+        considerations: 'Verify eligibility, current pricing and terms before presenting them as confirmed policy.',
+        callouts: [
+          {
+            kind: 'published',
+            text: 'The official Junior Trade page describes trade-in credit of 50% of the original purchase price toward larger equipment.',
+            url: JT_URL,
+            urlLabel: 'Junior Trade page',
+          },
+        ],
+      }),
+      n('join', 'parallel', 'Form complete · equipment chosen', { phase: 'Equipment entry & ASTM authorization' }),
+      n('retrieve', 'step', 'Get the iPad back and enter the equipment', {
+        phase: 'Equipment entry & ASTM authorization',
+        what: 'Retrieve the iPad from the parent and enter the selected equipment.',
+        systemIds: ['sys-jrt-parent-form'],
+        equipmentIds: ['eq-ipad'],
+      }),
+      n('authorize', 'step', 'Obtain ASTM authorization', {
+        phase: 'Equipment entry & ASTM authorization',
+        critical: true,
+        what: 'Get the required ASTM authorization / sign-off.',
+        who: 'Who may give the authorization hasn’t been captured.',
+        systemIds: ['sys-jrt-astm-record'],
+      }),
+      n('who-astm', 'decision', 'Who runs ASTM?', {
+        phase: 'Equipment entry & ASTM authorization',
+        what: 'Depending on staffing and approved procedures, either proceed with ASTM yourself or begin fitting the next child.',
+      }),
+      n('next-child', 'step', 'Start fitting the next child', {
+        phase: 'Equipment entry & ASTM authorization',
+        what: 'Begin fitting the next child while ASTM is completed under approved procedures.',
+        considerations: 'How ASTM is passed to a teammate hasn’t been captured.',
+        status: 'unverified',
+      }),
+      n('astm-warn', 'warning', 'ASTM is safety-critical', {
+        phase: 'ASTM procedure',
+        critical: true,
+        what: ASTM_SAFETY,
+        considerations: 'Only staff trained and authorized under current procedures perform or check this work.',
+        equipmentIds: ['eq-ski-bindings'],
+      }),
+      n('astm', 'unknown', 'ASTM binding test & documentation', {
+        phase: 'ASTM procedure',
+        critical: true,
+        what: 'Perform the required binding testing and documentation exactly as current approved shop and manufacturer procedures specify.',
+        considerations: 'No approved internal ASTM procedure has been captured in this atlas yet. Add one only from an authorized source.',
+        systemIds: ['sys-binding-reference', 'sys-jrt-astm-record'],
+        equipmentIds: ['eq-ski-bindings'],
+        relatedWorkflowIds: ['wf-ski-select'],
+      }),
+      n('signature', 'step', 'Parent’s final ASTM signature', {
+        phase: 'Final signature & release',
+        critical: true,
+        what: 'Have the parent give their final ASTM signature.',
+        who: 'Parent or guardian signs.',
+        systemIds: ['sys-jrt-astm-record'],
+      }),
+      n('complete', 'decision', 'All mandatory steps and paperwork complete?', {
+        phase: 'Final signature & release',
+        critical: true,
+        what: 'Confirm the required documentation is complete.',
+        considerations: 'Release only after every mandatory procedure is satisfied.',
+        systemIds: ['sys-jrt-astm-record'],
+      }),
+      n('release', 'end', 'Equipment released to the family', { phase: 'Final signature & release' }),
+    ],
+    edges: [
+      e('start', 'appt'),
+      e('appt', 'checkin-appt', 'yes', 'Yes'),
+      e('appt', 'checkin-walk', 'no', 'No'),
+      e('checkin-appt', 'shoes'),
+      e('checkin-walk', 'shoes'),
+      e('shoes', 'split'),
+      e('split', 'form', 'branch'),
+      e('split', 'boot-size', 'branch'),
+      e('boot-size', 'boot-stock'),
+      e('boot-stock', 'goldilocks', 'yes', 'In stock'),
+      e('boot-stock', 'boot-out', 'no', 'Out of stock'),
+      e('boot-out', 'goldilocks', 'normal', 'Buying new'),
+      e('goldilocks', 'fit-ok'),
+      e('fit-ok', 'boot-size', 'loop', 'Try another size'),
+      e('fit-ok', 'ski-size', 'yes', 'Just right'),
+      e('ski-size', 'ski-stock'),
+      e('ski-stock', 'tradein', 'yes', 'In stock'),
+      e('ski-stock', 'ski-out', 'no', 'Out of stock'),
+      e('ski-out', 'tradein', 'normal', 'Buying new'),
+      e('tradein', 'join', 'branch'),
+      e('form', 'join', 'branch'),
+      e('join', 'retrieve'),
+      e('retrieve', 'authorize'),
+      e('authorize', 'who-astm'),
+      e('who-astm', 'astm-warn', 'branch', 'Run it now'),
+      e('who-astm', 'next-child', 'branch', 'Next child'),
+      e('next-child', 'astm-warn', 'normal', 'ASTM still required'),
+      e('astm-warn', 'astm'),
+      e('astm', 'signature'),
+      e('signature', 'complete'),
+      e('complete', 'release', 'yes', 'Yes'),
+      e('complete', 'astm', 'loop', 'No — resolve first'),
+    ],
+  },
+  {
+    ...field,
+    type: 'workflow',
+    id: 'wf-jrt-out-of-stock',
+    code: 'JRT-05',
+    title: 'Out of stock: options for the family',
+    summary: 'Shared by boot fitting and ski sizing when the size isn’t available. Three options — buying new is generally preferred when practical.',
+    trigger: 'The needed boot size or ski length isn’t in stock.',
+    outcome: 'The family has chosen a path: wait for restock, another location, or new equipment.',
+    source: 'Employee field notes, Nov 2026',
+    departmentIds: ['dept-jr-trades'],
+    systemIds: ['sys-inventory'],
+    equipmentIds: ['eq-ski-boots', 'eq-skis'],
+    nodes: [
+      n('start', 'start', 'Needed size isn’t in stock'),
+      n('explain', 'step', 'Explain the three options', {
+        what: 'Let the family know the size isn’t available right now and walk them through the options.',
+      }),
+      n('choose', 'decision', 'Which option works for the family?'),
+      n('callback', 'step', 'A · Call back to check for restock', {
+        what: 'The family calls back periodically to check whether the size is back in stock.',
+        considerations: 'Restock timing isn’t known.',
+      }),
+      n('other', 'step', 'B · Contact other Front Range locations', {
+        what: 'Contact other Front Range locations to see whether they have the size.',
+        considerations: 'Which locations to contact, and how, hasn’t been captured.',
+      }),
+      n('buy', 'step', 'C · Purchase new equipment', {
+        what: 'Offer new boots or skis instead.',
+        why: 'Buying new is generally the preferred option when practical, and new equipment keeps strong trade-in value.',
+        callouts: [{ kind: 'tip', text: 'Generally the preferred option when practical.' }],
+      }),
+      n('end-wait', 'end', 'Family follows up later'),
+      n('end-other', 'end', 'Family uses the location with stock'),
+      n('end-buy', 'end', 'Continue fitting with new equipment'),
+    ],
+    edges: [
+      e('start', 'explain'),
+      e('explain', 'choose'),
+      e('choose', 'callback', 'branch', 'A'),
+      e('choose', 'other', 'branch', 'B'),
+      e('choose', 'buy', 'branch', 'C · preferred'),
+      e('callback', 'end-wait'),
+      e('other', 'end-other'),
+      e('buy', 'end-buy'),
+    ],
+  },
 ]
 
 /* ------------------------------------------------------------------ */
@@ -596,25 +941,35 @@ const sec = (id: string, title: string, workflowIds: string[] = [], description?
 
 const departments: Department[] = [
   {
-    ...base,
+    ...field,
+    updatedAt: T2,
+    createdAt: T,
     id: 'dept-jr-trades',
     type: 'department',
     code: 'JRT',
     accent: 'brass',
     order: 1,
     title: 'JR Trades',
-    tagline: 'Servicing, repair & inspection',
-    summary: 'The shop side: keeping rental equipment safe and in rotation.',
+    tagline: 'Junior Trade: kids’ fitting, trade-ins & ASTM',
+    summary: 'Getting a child fitted for a Junior Trade package — boots, skis, paperwork, ASTM and release.',
     description:
-      'Starter structure based on the categories you listed. The department’s exact scope — and what “JR” refers to — still needs to be confirmed.',
+      'JR = Junior. This department runs the Junior Trade program (from employee field notes). The servicing, repair and inspection sections are the original starter structure — whether they belong here is still an open question.',
     sections: [
+      sec('junior-trade', 'Junior Trade fitting', ['wf-jrt-fitting', 'wf-jrt-out-of-stock'], 'From employee field notes. Prices are estimates; ASTM follows approved procedures only.'),
       sec('servicing', 'Equipment servicing', ['wf-jrt-tune']),
       sec('repair', 'Repair workflows', ['wf-jrt-repair']),
       sec('inspection', 'Inspection processes', ['wf-jrt-inspect']),
       sec('handling', 'Equipment handling', [], 'How equipment moves to, through and out of the shop.'),
     ],
-    responsibilities: ['Equipment servicing (unconfirmed scope)', 'Repairs routed from rentals', 'Inspection before return to fleet'],
-    equipmentIds: ['eq-tuning-tools', 'eq-wax', 'eq-base-repair'],
+    responsibilities: [
+      'Junior Trade check-in and fittings',
+      'Boot fitting and ski sizing for kids',
+      'Explaining out-of-stock options and trade-in value',
+      'ASTM authorization, documentation and the parent’s final signature',
+      'Equipment servicing, repairs and inspection (starter structure — scope unconfirmed)',
+    ],
+    systemIds: ['sys-jrt-checkin', 'sys-jrt-parent-form', 'sys-jrt-astm-record', 'sys-inventory'],
+    equipmentIds: ['eq-ski-boots', 'eq-skis', 'eq-ski-bindings', 'eq-ipad', 'eq-tuning-tools', 'eq-wax', 'eq-base-repair'],
   },
   {
     ...base,
@@ -692,10 +1047,81 @@ const g = (
 })
 
 const glossary: GlossaryEntry[] = [
-  g('gl-jr', 'JR', 'department', 'Meaning in “JR Trades” not yet confirmed.', {
-    departmentIds: ['dept-jr-trades'],
-    notes: 'Open question — see Review.',
-  }),
+  {
+    ...g('gl-jr', 'JR', 'department', 'Junior. In “JR Trades” it refers to the Junior Trade program for kids’ equipment.', {
+      aka: ['Junior'],
+      departmentIds: ['dept-jr-trades'],
+      workflowIds: ['wf-jrt-fitting'],
+    }),
+    ...field,
+    createdAt: T,
+  },
+  {
+    ...g(
+      'gl-junior-trade',
+      'Junior Trade',
+      'process',
+      'The kids’ equipment program: a child is fitted for a junior ski package, and the family can later trade it in for credit toward larger equipment as the child grows. Confirm current eligibility, pricing and terms in store.',
+      {
+        aka: ['Junior Trade program', 'Trade-in'],
+        departmentIds: ['dept-jr-trades'],
+        systemIds: ['sys-jrt-checkin'],
+        workflowIds: ['wf-jrt-fitting', 'wf-jrt-out-of-stock'],
+        sourceIds: ['src-jrt-field-notes', 'src-jrt-website'],
+      },
+    ),
+    ...field,
+    sourceIds: ['src-jrt-field-notes', 'src-jrt-website'],
+  },
+  {
+    ...g(
+      'gl-goldilocks',
+      'Goldilocks fit',
+      'process',
+      'Employee shorthand for a boot fit that is “just right” — not too big, not too small — including where the big toe sits relative to the front of the boot. No exact clearance measurement has been captured; follow approved fitting training.',
+      { aka: ['Goldilocks fitting'], departmentIds: ['dept-jr-trades'], workflowIds: ['wf-jrt-fitting'] },
+    ),
+    ...field,
+  },
+  {
+    ...g(
+      'gl-astm',
+      'ASTM',
+      'acronym',
+      'ASTM International, a standards organization. In ski shops “ASTM” is common shorthand for the standardized binding test and its documentation, completed before skis are released. The local procedure, equipment, forms and who may authorize it have not been captured. Safety-critical.',
+      {
+        aka: ['ASTM test', 'ASTM authorization', 'ASTM signature'],
+        departmentIds: ['dept-jr-trades', 'dept-ski'],
+        systemIds: ['sys-jrt-astm-record', 'sys-binding-reference'],
+        workflowIds: ['wf-jrt-fitting'],
+      },
+    ),
+    // General industry meaning — not from the field notes, so it stays Unverified.
+    illustrative: false,
+    sourceIds: [],
+    createdAt: T2,
+    updatedAt: T2,
+  },
+  {
+    ...g(
+      'gl-front-range',
+      'Front Range locations',
+      'general',
+      'Other stores in Colorado’s Front Range that may have a size in stock when this one doesn’t. Which locations, and how to check their stock, haven’t been captured.',
+      { aka: ['Front Range'], departmentIds: ['dept-jr-trades'], workflowIds: ['wf-jrt-out-of-stock'] },
+    ),
+    ...field,
+  },
+  {
+    ...g(
+      'gl-appointment',
+      'Appointment',
+      'process',
+      'A Junior Trade fitting booked ahead by the parent. Appointment details sometimes include the child’s height and weight.',
+      { departmentIds: ['dept-jr-trades'], systemIds: ['sys-jrt-checkin'], workflowIds: ['wf-jrt-fitting'] },
+    ),
+    ...field,
+  },
   g('gl-bsl', 'BSL', 'acronym', 'Boot sole length — the length of a ski boot’s sole in millimetres, usually printed on the shell. Used when bindings are set up for a boot.', {
     aka: ['Boot sole length'],
     departmentIds: ['dept-ski', 'dept-jr-trades'],
@@ -770,7 +1196,14 @@ const q = (id: string, title: string, body: string, links: Note['links']): Note 
 })
 
 const notes: Note[] = [
-  q('q-jr-meaning', 'What does “JR” in JR Trades refer to?', 'Confirm the department’s name and scope.', [{ type: 'department', id: 'dept-jr-trades' }]),
+  {
+    ...q('q-jr-meaning', 'What does “JR” in JR Trades refer to?', 'Confirm the department’s name and scope.', [{ type: 'department', id: 'dept-jr-trades' }]),
+    status: 'observed',
+    updatedAt: T2,
+    sourceIds: ['src-jrt-field-notes'],
+    resolved: true,
+    answer: 'Junior — the Junior Trade program for kids’ equipment (employee field notes; public Junior Trade page). Whether the shop servicing sections also belong to this department is a separate open question.',
+  },
   q('q-res-system', 'Which system is used to look up reservations?', 'Capture the product name, search fields and a screenshot of the lookup screen.', [
     { type: 'system', id: 'sys-reservations' },
   ]),
@@ -781,8 +1214,56 @@ const notes: Note[] = [
     { type: 'workflow', id: 'wf-ski-select', nodeId: 'check' },
   ]),
   q('q-repair-tag', 'How is an item flagged for repair?', 'Physical tag, form, or a record in a system? What information goes on it?', [{ type: 'system', id: 'sys-repair-tag' }]),
+  /* Junior Trade field notes — what still needs confirming */
+  { ...q('q-jrt-scope', 'Does JR Trades also handle servicing, repair and inspection?', 'The shop sections are original starter structure. Confirm whether they belong to this department or another one.', [{ type: 'department', id: 'dept-jr-trades' }]), createdAt: T2, updatedAt: T2 },
+  { ...q('q-jrt-checkin', 'Which system is used to check in Junior Trade guests?', 'Capture the product name, how appointments are found, and where the child’s height and weight appear.', [{ type: 'system', id: 'sys-jrt-checkin' }, { type: 'workflow', id: 'wf-jrt-fitting', nodeId: 'checkin-appt' }]), createdAt: T2, updatedAt: T2 },
+  { ...q('q-jrt-walkin', 'How are guests without an appointment checked in?', 'Capture the steps and screens for a walk-in Junior Trade fitting.', [{ type: 'workflow', id: 'wf-jrt-fitting', nodeId: 'checkin-walk' }]), createdAt: T2, updatedAt: T2 },
+  { ...q('q-jrt-form', 'Which app and form are used on the iPad?', 'Capture the app name, the form’s fields and where the selected equipment is entered.', [{ type: 'system', id: 'sys-jrt-parent-form' }]), createdAt: T2, updatedAt: T2 },
+  { ...q('q-jrt-pricing', 'Confirm current Junior Trade pricing', 'Employee-reported: base package ≈ $175, new boots ≈ +$45, new skis ≈ +$100. Confirm against current official pricing.', [{ type: 'workflow', id: 'wf-jrt-fitting', nodeId: 'boot-out' }, { type: 'workflow', id: 'wf-jrt-fitting', nodeId: 'ski-out' }]), createdAt: T2, updatedAt: T2 },
+  { ...q('q-jrt-tradein', 'Confirm trade-in eligibility and terms', 'The public page describes 50% of the original purchase price toward larger equipment. Confirm eligibility, conditions and current terms before quoting them as policy.', [{ type: 'workflow', id: 'wf-jrt-fitting', nodeId: 'tradein' }, { type: 'source', id: 'src-jrt-website' }]), createdAt: T2, updatedAt: T2 },
+  { ...q('q-jrt-astm', 'Capture the approved ASTM procedure', 'From authorized training only: who may authorize and perform ASTM, the required documentation, and the approved procedure to link here.', [{ type: 'workflow', id: 'wf-jrt-fitting', nodeId: 'astm' }, { type: 'system', id: 'sys-jrt-astm-record' }]), createdAt: T2, updatedAt: T2 },
+  { ...q('q-jrt-locations', 'How do staff check stock at other Front Range locations?', 'Which locations, and is it a phone call or a system lookup?', [{ type: 'workflow', id: 'wf-jrt-out-of-stock', nodeId: 'other' }]), createdAt: T2, updatedAt: T2 },
 ]
 
-export const SEED_VERSION = 1
+/**
+ * Content versions. A fresh database receives every entity above. An
+ * existing database is brought up to date by applying each version's list:
+ * new items are added, and changed starter items are replaced ONLY if nobody
+ * has edited them yet (no revision) and they were not deleted — so a
+ * person's own edits and deletions always win.
+ */
+export const SEED_VERSION = 2
+
+export const SEED_UPDATES: Record<number, { note: string; ids: string[] }> = {
+  2: {
+    note: 'Junior Trade employee field notes',
+    ids: [
+      'src-jrt-field-notes',
+      'src-jrt-website',
+      'sys-jrt-checkin',
+      'sys-jrt-parent-form',
+      'sys-jrt-astm-record',
+      'eq-ipad',
+      'wf-jrt-fitting',
+      'wf-jrt-out-of-stock',
+      'dept-jr-trades',
+      'gl-jr',
+      'gl-junior-trade',
+      'gl-goldilocks',
+      'gl-astm',
+      'gl-front-range',
+      'gl-appointment',
+      'q-jr-meaning',
+      'q-jrt-scope',
+      'q-jrt-checkin',
+      'q-jrt-walkin',
+      'q-jrt-form',
+      'q-jrt-pricing',
+      'q-jrt-tradein',
+      'q-jrt-astm',
+      'q-jrt-locations',
+    ],
+  },
+}
 
 export const seedEntities: Entity[] = [...sources, ...systems, ...equipment, ...workflows, ...departments, ...glossary, ...notes]
