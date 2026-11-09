@@ -56,6 +56,16 @@ export function NodeDetail({
         </div>
       )}
 
+      {node.critical && node.kind !== 'warning' && (
+        <div className="banner banner--warning" role="note">
+          <Icon name="warning" size={18} />
+          <div>
+            <b>Safety-critical step.</b> Follow current approved procedures only — this atlas is not that reference.
+          </div>
+        </div>
+      )}
+      {node.phase && <div className="nodedetail__stage mono">Stage · {node.phase}</div>}
+
       {target && (
         <button
           className="handoff"
@@ -154,7 +164,7 @@ export function NodeDetail({
 }
 
 const KINDS: NodeKind[] = ['step', 'decision', 'warning', 'unknown', 'link', 'parallel', 'start', 'end']
-const ESSENTIAL = new Set(['label', 'linkWorkflowId', 'status', 'what'])
+const ESSENTIAL = new Set(['label', 'linkWorkflowId', 'embed', 'status', 'what'])
 
 export function NodeEditor({
   wf,
@@ -201,7 +211,7 @@ export function NodeEditor({
           ))}
         </div>
       </div>
-      <FormFields schema={essentials} value={node as any} onChange={change} hide={node.kind === 'link' ? [] : ['linkWorkflowId']} />
+      <FormFields schema={essentials} value={node as any} onChange={change} hide={node.kind === 'link' ? [] : ['linkWorkflowId', 'embed']} />
 
       <details className="more" open={filled > 0}>
         <summary>

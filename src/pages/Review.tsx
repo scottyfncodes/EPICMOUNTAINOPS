@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import type { Department, Entity, Note, Source, Status, Workflow } from '../../shared/types'
-import { integrityReport } from '../../shared/validate'
+import { integrityReport, isSafeUrl } from '../../shared/validate'
 import { EntityActions, EntityEditor } from '../components/Editor'
 import { blankEntity } from '../components/Forms'
 import { Icon } from '../components/Icon'
@@ -489,6 +489,14 @@ function SourceCard({ source }: { source: Source }) {
       </header>
       <h3 className="notecard__title">{source.title}</h3>
       {source.description && <RichText text={source.description} />}
+      {source.url && isSafeUrl(source.url) && (
+        <a className="callout__link" href={source.url} target="_blank" rel="noopener noreferrer">
+          {new URL(source.url).hostname}
+          {new URL(source.url).pathname !== '/' ? new URL(source.url).pathname : ''}
+          <Icon name="external" size={13} />
+          <span className="sr-only"> (opens in a new tab)</span>
+        </a>
+      )}
       <p className="muted">
         Referenced by {usedBy.length} item{usedBy.length === 1 ? '' : 's'}
         {source.date ? ` · ${source.date}` : ''}

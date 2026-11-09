@@ -1,5 +1,5 @@
 import { useId, useMemo, useState, type ReactNode } from 'react'
-import type { DepartmentSection, Entity, EntityRef, EntityType, Source, Status } from '../../shared/types'
+import type { Callout, CalloutKind, DepartmentSection, Entity, EntityRef, EntityType, Source, Status } from '../../shared/types'
 import { verificationProblem } from '../../shared/validate'
 import { STATUSES } from '../../shared/types'
 import { ACCENTS, newId, NODE_META, STATUS_META, TYPE_META } from '../lib/meta'
@@ -19,6 +19,7 @@ export type FieldDef =
   | { key: string; label: string; kind: 'date'; help?: string }
   | { key: string; label: string; kind: 'sections'; help?: string }
   | { key: string; label: string; kind: 'links'; help?: string }
+  | { key: string; label: string; kind: 'callouts'; help?: string }
   | { kind: 'heading'; label: string; key?: undefined }
 
 /* ------------------------------------------------------------------ */
@@ -113,6 +114,7 @@ export const SCHEMAS: Record<EntityType, FieldDef[]> = {
     { key: 'kind', label: 'Type', kind: 'select', options: opt({ document: 'Document', training: 'Training session', demonstration: 'Demonstration', verbal: 'Verbal instruction', screenshot: 'Screenshot', firsthand: 'First-hand experience', other: 'Other' }) },
     { key: 'authorized', label: 'Authorized source', kind: 'checkbox', help: 'An official procedure or material you are authorized to use.' },
     { key: 'date', label: 'Date', kind: 'date' },
+    { key: 'url', label: 'Link', kind: 'text', placeholder: 'https://…', help: 'For public pages or documents.' },
     { key: 'description', label: 'Description', kind: 'textarea' },
     statusField,
     { key: 'notes', label: 'Notes', kind: 'textarea' },
@@ -124,7 +126,10 @@ export const NODE_SCHEMA: FieldDef[] = [
   { key: 'label', label: '1 · Step name', kind: 'text', required: true },
   { key: 'kind', label: 'Shape', kind: 'select', options: Object.entries(NODE_META).map(([value, m]) => ({ value, label: `${m.label} — ${m.help}` })) },
   { key: 'linkWorkflowId', label: 'Hands off to workflow', kind: 'refs', types: ['workflow'], single: true },
+  { key: 'embed', label: 'Show the linked workflow inline in the field guide', kind: 'checkbox', help: 'For shared sub-procedures used from several places.' },
   { key: 'status', label: 'Verification status', kind: 'status' },
+  { key: 'phase', label: 'Stage', kind: 'text', placeholder: 'e.g. Boot fitting', help: 'Steps with the same stage are grouped, numbered and tracked in the field guide.' },
+  { key: 'critical', label: 'Safety-critical step', kind: 'checkbox', help: 'Marked in red everywhere. Describe only what authorized procedures allow.' },
   { key: 'what', label: '2 · What happens', kind: 'textarea' },
   { key: 'why', label: '3 · Why it happens', kind: 'textarea', rows: 2 },
   { key: 'who', label: '4 · Who is responsible', kind: 'text' },
@@ -134,6 +139,7 @@ export const NODE_SCHEMA: FieldDef[] = [
   { key: 'next', label: '7 · What happens next (notes)', kind: 'textarea', rows: 2, help: 'Connections drawn on the map are listed automatically.' },
   { key: 'mistakes', label: '8 · Common mistakes', kind: 'textarea', rows: 2 },
   { key: 'considerations', label: '9 · Important considerations', kind: 'textarea', rows: 2 },
+  { key: 'callouts', label: 'Tips & labelled notes', kind: 'callouts', help: 'Each note says where it comes from: a pro tip, an employee-reported figure, published policy, or a safety reminder.' },
   { key: 'relatedWorkflowIds', label: '10 · Related workflows', kind: 'refs', types: ['workflow'] },
   { key: 'imageIds', label: '11 · Reference screenshots', kind: 'images' },
 ]
@@ -276,7 +282,57 @@ function FieldInput({ def, value, onChange }: { def: Exclude<FieldDef, { kind: '
           <LinksInput value={value || []} onChange={onChange} />
         </Wrap>
       )
+    case 'callouts':
+      return (
+        <Wrap label={def.label} help={def.help}>
+          <CalloutsInput value={value || []} onChange={onChange} />
+        </Wrap>
+      )
   }
+}
+
+const CALLOUT_OPTIONS: { value: CalloutKind; label: string }[] = [
+  { value: 'tip', label: 'Pro tip (field note)' },
+  { value: 'estimate', label: 'Employee-reported figure (unverified)' },
+  { value: 'published', label: 'Published policy (confirm before quoting)' },
+  { value: 'safety', label: 'Safety-critical reminder' },
+]
+
+function CalloutsInput({ value, onChange }: { value: Callout[]; onChange: (v: Callout[]) => void }) {
+  const set = (i: number, patch: Partial<Callout>) => onChange(value.map((c, k) => (k === i ? { ...c, ...patch } : c)))
+  return (
+    <div className="calloutsin">
+      {value.map((c, i) => (
+        <fieldset key={i} className="calloutsin__row">
+          <legend className="sr-only">Note {i + 1}</legend>
+          <div className="calloutsin__top">
+            <select className="input" value={c.kind} onChange={(e) => set(i, { kind: e.target.value as CalloutKind })} aria-label={`Note ${i + 1} type`}>
+              {CALLOUT_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <button type="button" className="iconbtn" onClick={() => onChange(value.filter((_, k) => k !== i))} aria-label={`Remove note ${i + 1}`}>
+              <Icon name="close" size={16} />
+            </button>
+          </div>
+          <textarea className="input" rows={2} value={c.text} onChange={(e) => set(i, { text: e.target.value })} aria-label={`Note ${i + 1} text`} />
+          <input
+            className="input"
+            inputMode="url"
+            placeholder="Optional link — https://…"
+            value={c.url ?? ''}
+            onChange={(e) => set(i, { url: e.target.value || undefined })}
+            aria-label={`Note ${i + 1} link`}
+          />
+        </fieldset>
+      ))}
+      <button type="button" className="btn btn--ghost" onClick={() => onChange([...value, { kind: 'tip', text: '' }])}>
+        <Icon name="plus" size={16} /> Add a note
+      </button>
+    </div>
+  )
 }
 
 function ListInput({ value, onChange, placeholder }: { value: string[]; onChange: (v: string[]) => void; placeholder?: string }) {

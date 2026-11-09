@@ -82,6 +82,34 @@ export type NodeKind =
   | 'unknown'
   | 'end'
 
+/**
+ * Short provenance-labelled notes attached to a step, so field knowledge,
+ * published policy and safety reminders never blur together:
+ *  - tip       employee pro tip from the floor (first-hand field note)
+ *  - estimate  an employee-reported figure (price, time…) — unverified
+ *  - published something an official public page states — confirm before quoting
+ *  - safety    a safety-critical reminder
+ */
+export type CalloutKind = 'tip' | 'estimate' | 'published' | 'safety'
+
+export interface Callout {
+  kind: CalloutKind
+  text: string
+  /** Optional https link (e.g. the published page). */
+  url?: string
+  urlLabel?: string
+}
+
+/** Body landmarks used by visual sizing references, from lowest to highest. */
+export type BodyLandmark = 'chest' | 'collarbone' | 'chin' | 'nose' | 'eyes' | 'forehead' | 'top'
+
+/** One band of a visual sizing reference (e.g. ski length by ability). */
+export interface SizingBand {
+  label: string
+  from: BodyLandmark
+  to: BodyLandmark
+}
+
 export interface FlowNode {
   id: string
   kind: NodeKind
@@ -111,7 +139,16 @@ export interface FlowNode {
   imageIds?: string[]
   /** For `link` nodes: the workflow this step hands off to. */
   linkWorkflowId?: string
+  /** For `link` nodes: show the linked workflow inline in the field guide (shared sub-procedures). */
+  embed?: boolean
   status?: Status
+  /** Stage this step belongs to; the field guide groups steps into numbered stages. */
+  phase?: string
+  /** Safety-critical step: follow approved procedures only. */
+  critical?: boolean
+  callouts?: Callout[]
+  /** Visual sizing reference shown with the step. */
+  sizing?: SizingBand[]
 }
 
 export type EdgeKind = 'normal' | 'yes' | 'no' | 'branch' | 'loop'
@@ -136,6 +173,8 @@ export interface Workflow extends BaseEntity {
   edges: FlowEdge[]
   /** Layout direction preference. */
   direction?: 'TB' | 'LR'
+  /** Which view opens first (the map, or the step-by-step field guide). */
+  defaultView?: 'map' | 'guide'
 }
 
 export type SystemKind = 'software' | 'program' | 'tool' | 'reference' | 'process'
@@ -194,6 +233,8 @@ export interface Source extends BaseEntity {
   description?: string
   date?: string
   authorized?: boolean
+  /** Link to the source when it is a public page or document (https only). */
+  url?: string
 }
 
 export type Entity = Department | Workflow | System | Equipment | GlossaryEntry | Note | Source

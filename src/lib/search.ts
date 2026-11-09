@@ -76,7 +76,7 @@ export function buildDocs(atlas: Atlas): SearchDoc[] {
             kind: 'step',
             title: n.label,
             aka: NODE_META[n.kind].label,
-            body: join(n.what, n.why, n.who, n.info, n.next, n.mistakes, n.considerations, names(n.systemIds), names(n.equipmentIds)),
+            body: join(n.what, n.why, n.who, n.info, n.next, n.mistakes, n.considerations, n.phase, (n.callouts || []).map((c) => c.text), (n.sizing || []).map((b) => b.label), names(n.systemIds), names(n.equipmentIds)),
             where: `${w.code ? w.code + ' ' : ''}${w.title}${n.kind !== 'step' ? ' · ' + NODE_META[n.kind].label : ''}`,
             href: hrefFor(w, n.id),
             status: n.status || w.status,

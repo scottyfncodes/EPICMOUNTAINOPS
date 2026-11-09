@@ -1558,7 +1558,12 @@ button.chip:hover {
 
 .hubgrid {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px 40px;
+}
+/* Grid items may shrink below their content, so long titles ellipsize instead of widening the page. */
+.hubgrid > * {
+  min-width: 0;
 }
 @media (min-width: 1000px) {
   .hubgrid {

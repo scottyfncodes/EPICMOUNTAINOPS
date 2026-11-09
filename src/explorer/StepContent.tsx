@@ -1,6 +1,7 @@
 import type { FlowNode, Workflow } from '../../shared/types'
 import { Icon } from '../components/Icon'
 import { RefChips, RichText } from '../components/ui'
+import { Callouts, SizingFigure } from './Callouts'
 import { effectiveStatus } from './routing'
 
 /**
@@ -14,7 +15,8 @@ export function DoKnowCheck({ node, wf, compact = false }: { node: FlowNode; wf:
   const st = effectiveStatus(node, wf)
   const kit = [...(node.systemIds || []), ...(node.equipmentIds || [])]
   const hasDo = Boolean(node.what || node.who)
-  const hasKnow = Boolean(node.why || node.info || node.considerations || kit.length)
+  const hasKnow = Boolean(node.why || node.info || node.considerations || kit.length || node.sizing?.length)
+  const hasCallouts = Boolean(node.callouts?.length)
   const caveat =
     node.kind === 'unknown'
       ? 'This step is a known gap. Capture it from an authorized source before relying on it.'
@@ -26,7 +28,7 @@ export function DoKnowCheck({ node, wf, compact = false }: { node: FlowNode; wf:
             : 'Marked unverified — needs confirming.'
           : null
   const hasCheck = Boolean(node.mistakes || caveat)
-  if (!hasDo && !hasKnow && !hasCheck) return null
+  if (!hasDo && !hasKnow && !hasCheck && !hasCallouts) return null
 
   return (
     <div className={`dkc ${compact ? 'dkc--compact' : ''}`}>
@@ -43,6 +45,7 @@ export function DoKnowCheck({ node, wf, compact = false }: { node: FlowNode; wf:
           )}
         </section>
       )}
+      {hasCallouts && <Callouts items={node.callouts} />}
       {hasKnow && (
         <section className="dkc__block dkc--know" aria-label="Know">
           <h4 className="dkc__label">
@@ -60,6 +63,12 @@ export function DoKnowCheck({ node, wf, compact = false }: { node: FlowNode; wf:
               <RichText text={node.info} />
             </div>
           )}
+          {node.sizing?.length ? (
+            <div className="dkc__item">
+              <span className="dkc__k">Sizing reference</span>
+              <SizingFigure bands={node.sizing} />
+            </div>
+          ) : null}
           {kit.length > 0 && (
             <div className="dkc__item">
               <span className="dkc__k">Systems & equipment</span>

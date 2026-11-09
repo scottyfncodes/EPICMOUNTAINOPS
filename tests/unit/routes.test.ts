@@ -12,7 +12,7 @@ describe('operation route map', () => {
   it('follows hand-offs within a line, in order', () => {
     expect(codes('dept-ski')).toEqual([['SKI-01', 'SKI-02', 'SKI-03', 'SKI-04'], ['SKI-05']])
     expect(codes('dept-snowboard')).toEqual([['SNB-01', 'SNB-02', 'SNB-03']])
-    expect(codes('dept-jr-trades')).toEqual([['JRT-02', 'JRT-03', 'JRT-01']])
+    expect(codes('dept-jr-trades')).toEqual([['JRT-02', 'JRT-03', 'JRT-01'], ['JRT-04', 'JRT-05']])
   })
   it('breaks the line where no hand-off exists (never invents a link)', () => {
     // Issuance (SKI-04) has no hand-off to Return (SKI-05) in the data.

@@ -31,7 +31,7 @@ import { edgeTypes, type OpsRFEdge } from './edges'
 import { nodeTypes, type OpsRFNode } from './nodes'
 import { Guide } from './Guide'
 import { EdgeEditor, NodeDetail, NodeEditor, WorkflowInfo } from './Panels'
-import { effectiveStatus, lensMark, LENSES, routeEdge, systemsInWorkflow, type Lens } from './routing'
+import { effectiveStatus, lensMark, LENSES, routeAll, systemsInWorkflow, type Lens } from './routing'
 import { clearStoredDraft, readStoredDraft, useDraft } from './useDraft'
 
 export function WorkflowExplorer() {
@@ -84,7 +84,13 @@ function ExplorerInner({ id }: { id: string }) {
   const { draft, dirty, update, undo, redo, reset, canUndo, canRedo, getCurrent, isDirty } = useDraft(wf && wf.type === 'workflow' ? prepare(wf) : null)
   const [restored, setRestored] = useState<string | null>(null)
   const [editing, setEditing] = useState(params.get('edit') === '1' && canEdit)
-  const [view, setView] = useState<'map' | 'guide'>(params.get('view') === 'guide' ? 'guide' : 'map')
+  // ?view= wins; editing always starts on the map; otherwise the workflow's own preference.
+  const [view, setView] = useState<'map' | 'guide'>(() => {
+    const v = params.get('view')
+    if (v === 'guide' || v === 'map') return v
+    if (params.get('edit') === '1') return 'map'
+    return wf?.type === 'workflow' && wf.defaultView === 'guide' ? 'guide' : 'map'
+  })
   const [panel, setPanel] = useState<'none' | 'info'>('none')
   const [size, setSize] = useState<'half' | 'full'>('half')
   const [edgeSel, setEdgeSel] = useState<string | null>(null)
@@ -314,6 +320,7 @@ function ExplorerInner({ id }: { id: string }) {
     if (!draft) return []
     const byId = new Map(draft.nodes.map((n) => [n.id, n]))
     const dir = draft.direction || 'TB'
+    const routes = routeAll(draft.nodes, draft.edges, dir)
     return draft.edges.flatMap((e) => {
       const s = byId.get(e.source)
       const t = byId.get(e.target)
@@ -321,7 +328,7 @@ function ExplorerInner({ id }: { id: string }) {
       const kind = e.kind || 'normal'
       const hot = Boolean(selectedId && (e.source === selectedId || e.target === selectedId)) || e.id === edgeSel
       const dim = Boolean(selectedId) && !hot
-      const route = routeEdge(s, t, dir)
+      const route = routes.get(e.id)!
       return [
         {
           id: e.id,
@@ -333,7 +340,7 @@ function ExplorerInner({ id }: { id: string }) {
           label: e.label,
           selected: e.id === edgeSel,
           markerEnd: { type: MarkerType.ArrowClosed, width: 15, height: 15, color: hot ? MARKER.hot : MARKER[kind] },
-          data: { kind, hot, dim, editing, onLabelTap: editing ? onLabelTap : undefined },
+          data: { kind, hot, dim, editing, offset: route.offset, onLabelTap: editing ? onLabelTap : undefined },
         } as OpsRFEdge,
       ]
     })

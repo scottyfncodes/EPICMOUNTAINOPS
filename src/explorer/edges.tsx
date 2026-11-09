@@ -7,6 +7,8 @@ export type OpsEdgeData = {
   hot: boolean
   dim: boolean
   editing: boolean
+  /** Side routes: distance to travel out so the line clears steps in between. */
+  offset?: number
   onLabelTap?: (id: string) => void
 }
 
@@ -22,7 +24,7 @@ function OpsEdgeView({ id, sourceX, sourceY, targetX, targetY, sourcePosition, t
     sourcePosition,
     targetPosition,
     borderRadius: 14,
-    offset: kind === 'loop' ? 34 : 20,
+    offset: data?.offset ?? (kind === 'loop' ? 34 : 20),
   })
   // Place labels where they're unambiguous: branch labels right where they leave
   // their decision, loop-back labels where they re-enter — not at the midpoint,
@@ -30,7 +32,9 @@ function OpsEdgeView({ id, sourceX, sourceY, targetX, targetY, sourcePosition, t
   let px = lx
   let py = ly
   if (kind === 'loop') {
-    const o = targetPosition === 'right' ? 44 : targetPosition === 'left' ? -44 : 0
+    // Clear the node by at least half the pill's width, so long labels aren't tucked under it.
+    const clear = Math.max(44, String(label || '').length * 4.2 + 22)
+    const o = targetPosition === 'right' ? clear : targetPosition === 'left' ? -clear : 0
     px = targetX + o
     py = targetY + (targetPosition === 'bottom' ? 24 : targetPosition === 'top' ? -24 : 0)
   } else if (label) {

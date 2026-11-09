@@ -181,7 +181,7 @@ async function apiSuite(base) {
   ok('non-image uploads refused', [400, 415].includes((await api(base, '/api/images', jsonPost({ dataUrl: 'data:text/html;base64,PGgxPg==' }))).status))
 }
 
-const ROUTES = ['/', '/departments', '/departments/dept-ski', '/workflows', '/workflows/wf-ski-intake', '/workflows/wf-ski-intake?node=info', '/workflows/wf-ski-intake?view=guide', '/systems', '/systems/sys-reservations', '/equipment', '/glossary', '/glossary/gl-din', '/review', '/review/gaps', '/review/integrity', '/search?q=boot', '/add']
+const ROUTES = ['/', '/departments', '/departments/dept-ski', '/workflows', '/workflows/wf-ski-intake', '/workflows/wf-ski-intake?node=info', '/workflows/wf-ski-intake?view=guide', '/systems', '/systems/sys-reservations', '/equipment', '/glossary', '/glossary/gl-din', '/review', '/review/gaps', '/review/integrity', '/search?q=boot', '/add', '/departments/dept-jr-trades', '/workflows/wf-jrt-fitting', '/workflows/wf-jrt-fitting?view=map&node=astm', '/workflows/wf-jrt-out-of-stock', '/review/sources', '/glossary/gl-astm']
 
 async function layoutSuite(browser, base) {
   current = 'iPhone layouts'
@@ -552,7 +552,7 @@ async function a11ySuite(browser, base) {
   const axe = require('axe-core').source
   // The app's CSP (correctly) blocks injected inline scripts; only this audit context bypasses it.
   const { ctx, page } = await newPage(browser, 'iPhone 14 Pro', base, { bypassCSP: true })
-  for (const r of ['/', '/departments', '/departments/dept-jr-trades', '/workflows', '/workflows/wf-ski-intake?node=has-res', '/workflows/wf-ski-intake?view=guide', '/systems/sys-rental-record', '/glossary', '/review', '/search?q=bsl']) {
+  for (const r of ['/', '/departments', '/departments/dept-jr-trades', '/workflows', '/workflows/wf-ski-intake?node=has-res', '/workflows/wf-ski-intake?view=guide', '/systems/sys-rental-record', '/glossary', '/review', '/search?q=bsl', '/workflows/wf-jrt-fitting', '/workflows/wf-jrt-fitting?view=map&node=astm', '/review/sources']) {
     await page.goto(base + r, { waitUntil: 'networkidle' })
     await page.waitForTimeout(500)
     await page.addScriptTag({ content: axe })
@@ -563,6 +563,65 @@ async function a11ySuite(browser, base) {
     })
     ok(`${r}: no serious/critical WCAG A/AA violations`, res.length === 0, res.join(', '))
   }
+  await ctx.close()
+}
+
+async function juniorTradeSuite(browser, base) {
+  current = 'Junior Trade workflow'
+  console.log('\n' + current)
+  const all = await content(base)
+  const wf = all.find((e) => e.id === 'wf-jrt-fitting')
+  ok('field-note workflow is Observed, never Verified', wf && wf.status === 'observed')
+  const qs = all.filter((e) => e.type === 'note' && e.id.startsWith('q-jrt-'))
+  ok('open questions queued for review', qs.length === 8 && qs.every((q) => !q.resolved), String(qs.length))
+  ok('“what does JR mean” is answered', all.find((e) => e.id === 'q-jr-meaning').resolved === true)
+  const badLink = structuredClone(wf)
+  badLink.nodes.find((n) => n.id === 'tradein').callouts[0].url = 'javascript:alert(1)'
+  ok('server refuses unsafe callout links', (await api(base, '/api/entities', jsonPost({ entity: badLink, baseUpdatedAt: wf.updatedAt }))).status === 400)
+
+  const { ctx, page, errors } = await newPage(browser, 'iPhone 14 Pro', base)
+  await page.goto(base + '/workflows/wf-jrt-fitting', { waitUntil: 'networkidle' })
+  await page.waitForTimeout(500)
+  ok('opens in the step-by-step guide', await page.locator('.guide .stagebar').isVisible())
+  ok('eight stages tracked', (await page.locator('.stagebar__seg').count()) === 8)
+  await page.locator('.stagebar__seg').nth(6).tap()
+  await page.waitForTimeout(900)
+  const st7 = await page.locator('#stage-7').boundingBox()
+  ok('tapping a stage jumps to it', st7.y < 220, `y=${Math.round(st7.y)}`)
+  ok('progress follows the reader', (await page.locator('.stagebar__title').textContent()) === 'ASTM procedure')
+  ok('current stage is announced', (await page.locator('.stagebar__seg[aria-current="step"]').getAttribute('aria-label')).startsWith('Stage 7'))
+  ok('ASTM steps marked safety-critical', (await page.locator('.guidestep--critical').count()) === 5)
+  ok('pro tip labelled as a field note', await page.locator('#g-checkin-appt .callout--tip', { hasText: 'height and weight' }).isVisible())
+  const est = await page.locator('.callout--estimate').allTextContents()
+  ok('prices labelled as unverified estimates', est.length === 2 && est.every((t) => /Employee-reported/i.test(t) && /Unverified/i.test(t)) && est.some((t) => t.includes('$45')) && est.some((t) => t.includes('$100')))
+  const link = page.locator('#g-tradein .callout--published a.callout__link')
+  ok(
+    'published policy links out safely',
+    (await link.getAttribute('href')) === 'https://www.epicmountaingear.com/pages/junior-trade' && (await link.getAttribute('target')) === '_blank' && /noopener/.test(await link.getAttribute('rel')),
+  )
+  ok('ski sizing figure describes each band', /Beginner: collarbone to chin; Intermediate: chin to nose; Advanced: nose to top of head/.test(await page.locator('#g-ski-size svg[role="img"]').getAttribute('aria-label')))
+  const embeds = page.locator('.embed')
+  ok('out-of-stock playbook shown for boots and skis', (await embeds.count()) === 2)
+  await embeds.first().locator('summary').tap()
+  await page.waitForTimeout(300)
+  ok('playbook lists the three options', (await embeds.first().locator('.embed__step--step').count()) === 4 && (await embeds.first().locator('.embed__label', { hasText: 'C · Purchase new equipment' }).isVisible()))
+  ok('glossary terms link inside the guide', (await page.locator('.guide a.gloss', { hasText: 'ASTM' }).count()) > 0)
+
+  await page.goto(base + '/workflows/wf-jrt-fitting?view=map', { waitUntil: 'networkidle' })
+  await page.waitForTimeout(900)
+  const overlaps = await page.evaluate(() => {
+    const boxes = [...document.querySelectorAll('.edgelabel')].map((e) => [e.textContent, e.getBoundingClientRect()])
+    const hits = []
+    for (let i = 0; i < boxes.length; i++)
+      for (let j = i + 1; j < boxes.length; j++) {
+        const [a, r] = boxes[i]
+        const [b, q] = boxes[j]
+        if (r.left < q.right && q.left < r.right && r.top < q.bottom && q.top < r.bottom) hits.push(`${a}/${b}`)
+      }
+    return hits
+  })
+  ok('map branch labels never collide', overlaps.length === 0, overlaps.join(', '))
+  ok('no console errors', errors.length === 0, errors.slice(0, 3).join(' | '))
   await ctx.close()
 }
 
@@ -612,6 +671,7 @@ async function main() {
     await layoutSuite(browser, base)
     await explorerSuite(browser, base)
     await learningSuite(browser, base)
+    await juniorTradeSuite(browser, base)
     await editingSuite(browser, base)
     await captureSuite(browser, base)
     await reviewSuite(browser, base)

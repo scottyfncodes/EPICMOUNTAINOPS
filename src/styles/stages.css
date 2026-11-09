@@ -1,0 +1,441 @@
+/* ==========================================================================
+   Stages, labelled notes, sizing references, shared playbooks, safety-critical
+   steps. Built on the existing tokens so it reads in both the dark map and
+   the paper field guide.
+   ========================================================================== */
+
+/* ---------- labelled notes (callouts) ---------- */
+.callouts {
+  display: grid;
+  gap: 8px;
+}
+.callout {
+  --c: var(--brass);
+  padding: 9px 12px 10px;
+  border-radius: var(--r-m);
+  border: 1px solid color-mix(in srgb, var(--c) 38%, transparent);
+  background: color-mix(in srgb, var(--c) 8%, transparent);
+}
+.callout--estimate {
+  --c: var(--ochre);
+  border-style: dashed; /* same language as Unverified */
+}
+.callout--published {
+  --c: var(--glacier);
+}
+.callout--safety {
+  --c: var(--signal);
+}
+.callout__tag {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  margin-bottom: 3px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--paper-mute);
+}
+.callout__tag b {
+  color: var(--c);
+  font-weight: 700;
+}
+.callout__tag svg {
+  color: var(--c);
+}
+.callout .prose {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.45;
+}
+.callout__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 44px;
+  margin-bottom: -8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--glacier);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- visual sizing reference ---------- */
+.sizing {
+  margin: 6px 0 2px;
+  max-width: 380px;
+}
+.sizing__svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.sizing__mark line {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+.sizing__mark text {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
+  fill: var(--paper-mute);
+}
+.sizing__figure ellipse,
+.sizing__figure path {
+  fill: none;
+  stroke: var(--paper-dim);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.sizing__figure ellipse {
+  fill: color-mix(in srgb, var(--paper) 4%, transparent);
+}
+.sizing__figure .sizing__clav {
+  stroke-width: 1.1;
+  opacity: 0.7;
+}
+.sizing__band rect {
+  fill: var(--band);
+}
+.sizing__band--0 {
+  --band: var(--forest-hi);
+}
+.sizing__band--1 {
+  --band: var(--glacier);
+}
+.sizing__band--2 {
+  --band: var(--brass);
+}
+.sizing__band--3 {
+  --band: var(--signal);
+}
+.sizing__label {
+  font-family: var(--font);
+  font-size: 12.5px;
+  font-weight: 700;
+  fill: var(--paper);
+}
+.sizing__range {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  fill: var(--paper-mute);
+}
+.sizing__cap {
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: var(--paper-mute);
+}
+
+/* ---------- stage progress (field guide) ---------- */
+.stagebar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  padding: 8px max(var(--gutter), env(safe-area-inset-left)) 2px;
+  background: color-mix(in srgb, var(--ink) 92%, transparent);
+  -webkit-backdrop-filter: blur(10px) saturate(1.2);
+  backdrop-filter: blur(10px) saturate(1.2);
+  border-bottom: 1px solid var(--line-strong);
+}
+.stagebar > * {
+  /* Line up with the guide column (720px including its gutters). */
+  max-width: calc(720px - 2 * var(--gutter));
+  margin-left: auto;
+  margin-right: auto;
+}
+.stagebar__now {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+.stagebar__count {
+  flex: none;
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--paper-mute);
+}
+.stagebar__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 700;
+  font-variation-settings: 'wdth' 88;
+}
+.stagebar__crit {
+  display: inline-flex;
+  align-self: center;
+  color: var(--signal);
+}
+.stagebar__track {
+  display: flex;
+  gap: 3px;
+  margin-top: 0;
+  margin-bottom: 0;
+  padding: 0;
+  list-style: none;
+}
+.stagebar__track li {
+  flex: 1;
+  min-width: 0;
+}
+.stagebar__seg {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 30px;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.stagebar__seg span {
+  display: block;
+  width: 100%;
+  height: 5px;
+  border-radius: 1px;
+  background: var(--ink-4);
+  transition: background 0.2s, height 0.2s;
+}
+.stagebar__seg.is-crit span {
+  background: color-mix(in srgb, var(--signal) 28%, var(--ink-4));
+}
+.stagebar__seg.is-done span {
+  background: var(--paper-dim);
+}
+.stagebar__seg.is-now span {
+  height: 8px;
+  background: var(--paper);
+}
+.stagebar__seg.is-crit.is-done span,
+.stagebar__seg.is-crit.is-now span {
+  background: var(--signal);
+}
+.stagebar__seg:focus-visible {
+  outline: 2px solid var(--glacier);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+.guide:has(.stagebar) .guidestep,
+.guide:has(.stagebar) .guidestage {
+  scroll-margin-top: 70px;
+}
+
+/* ---------- stage headers in the guide ---------- */
+.guidestage {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  padding: 26px 0 8px;
+  border-bottom: 2px solid var(--paper);
+}
+.guidestage:first-child {
+  padding-top: 6px;
+}
+.guidestage__n {
+  flex-basis: 100%;
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--paper-mute);
+}
+.guidestage__title {
+  font-size: 23px;
+  font-weight: 700;
+  font-variation-settings: 'wdth' 80;
+  line-height: 1.1;
+}
+.guidestage__flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--signal);
+}
+.guidestage--critical {
+  border-bottom-color: var(--signal);
+}
+.guidestage--critical .guidestage__n {
+  color: var(--signal);
+}
+
+/* ---------- safety-critical steps ---------- */
+.guidestep--critical {
+  padding-left: 14px;
+  box-shadow: inset 3px 0 0 var(--signal);
+}
+.guidestep--critical.is-flash,
+.guidestep--critical.is-on {
+  box-shadow: inset 3px 0 0 var(--signal), -10px 0 0 color-mix(in srgb, var(--accent) 9%, transparent), 10px 0 0 color-mix(in srgb, var(--accent) 9%, transparent);
+}
+.guidestep__critical {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 2px 0 4px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--signal);
+}
+.guidestep__critical svg {
+  flex: none;
+  margin-top: 2px;
+}
+.opsnode.is-critical:not(.opsnode--decision) {
+  border-left: 4px solid var(--signal);
+}
+.opsnode.is-critical .opsnode__kind {
+  color: var(--signal);
+}
+.opsnode.is-critical.opsnode--decision .opsnode__diamond-in {
+  border-color: var(--signal);
+}
+.opsnode__meta .is-tip {
+  color: var(--brass);
+}
+.nodedetail__stage {
+  margin: -4px 0 10px;
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--paper-mute);
+}
+
+/* ---------- workflow source line ---------- */
+.brief__source {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 10px 0 0;
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+
+/* ---------- shared playbook shown inline ---------- */
+.embed {
+  margin: 12px 0 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-m);
+  background: var(--ink-3);
+}
+.embed__sum {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 1px 10px;
+  min-height: 56px;
+  padding: 9px 12px;
+  cursor: pointer;
+  list-style: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.embed__sum::-webkit-details-marker {
+  display: none;
+}
+.embed__kicker {
+  grid-column: 1;
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--paper-mute);
+}
+.embed__title {
+  grid-column: 1;
+  font-size: 15.5px;
+  font-weight: 700;
+}
+.embed__sum svg {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  transition: transform 0.2s var(--ease);
+}
+.embed[open] .embed__sum svg {
+  transform: rotate(180deg);
+}
+.embed__sum:focus-visible {
+  outline: 2px solid var(--glacier);
+  outline-offset: 2px;
+  border-radius: var(--r-m);
+}
+.embed__body {
+  padding: 0 12px 4px;
+  border-top: 1px solid var(--line);
+}
+.embed__steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.embed__step {
+  display: grid;
+  gap: 4px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--line);
+}
+.embed__step .prose {
+  margin: 0;
+  font-size: 14.5px;
+}
+.embed__label {
+  font-size: 15px;
+  font-weight: 700;
+}
+.embed__step--decision .embed__label {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--glacier);
+}
+.embed__open {
+  white-space: normal;
+  text-align: left;
+}
+
+/* ---------- editor: labelled notes ---------- */
+.calloutsin {
+  display: grid;
+  gap: 10px;
+}
+.calloutsin__row {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-m);
+  min-width: 0;
+}
+.calloutsin__top {
+  display: flex;
+  gap: 8px;
+}
+.calloutsin__top select {
+  flex: 1;
+  min-width: 0;
+}
+.calloutsin .btn {
+  justify-self: start;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stagebar__seg span,
+  .embed__sum svg {
+    transition: none;
+  }
+}

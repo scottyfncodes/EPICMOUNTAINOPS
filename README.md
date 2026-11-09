@@ -17,6 +17,18 @@ An interactive operations atlas for mountain retail and rental operations — de
 | **Add** `/add` | Capture a workflow, step, system, equipment, glossary entry, screenshot, observation or question. |
 | **Search** `/search` | Prefix + fuzzy search across departments, workflows, every step, systems, equipment, glossary and notes, with deep links straight to a step. |
 
+## Junior Trade (employee field notes)
+
+**JRT-04 Junior Trade fitting, ASTM & release** is built from first-hand employee field notes and opens in the field guide: eight numbered stages with a sticky progress bar (tap a segment to jump), from guest arrival to release.
+
+- **Labelled notes** on steps keep provenance visible: *Pro tip · field note*, *Employee-reported · unverified estimate* (prices), *Published policy · confirm before quoting* (with the public Junior Trade link), *Safety-critical*.
+- **Ski sizing reference** drawn from the field-note ranges (collarbone→chin, chin→nose, nose→top of head), labelled as a guideline, not an approved selection procedure.
+- **Shared out-of-stock playbook** (JRT-05) used by both boots and skis — one source of truth, shown inline in the guide.
+- **ASTM is safety-critical** and marked in red throughout. The atlas holds no release values, torque specs, adjustment steps or test requirements; the procedure is an explicit unknown until captured from an authorized source.
+- Unknown systems are named *pending identification*, and every open point (pricing, trade-in terms, ASTM procedure, check-in system, iPad app…) is queued in **Review**.
+
+Any workflow can use the same building blocks: a step's **Stage**, **Safety-critical** flag, **Tips & labelled notes**, and a hand-off's **Show inline** option are all in the step editor.
+
 ## Knowledge management
 
 - Every item has a status: **Verified**, **Observed**, **Unverified**, **Outdated**. Nothing is promoted automatically; marking something Verified requires a source and stamps the verification date.
@@ -54,6 +66,8 @@ shared/         Content model types, integrity rules (validate.ts) + illustrativ
 tests/unit      Vitest — validation, verification rules, relationships, search, layout
 tests/e2e       Playwright + axe-core end-to-end suite (iPhone SE/14 Pro/15 Pro Max + desktop)
 ```
+
+**Content versions.** `shared/seed.ts` holds the starter content and a list of changes per content version. A new database gets everything; an existing one is updated in one transaction that adds new items and refreshes starter items **only if nobody has edited them** (no revision) **or deleted them** — so the owner's work always wins. Each change is recorded in version history.
 
 **Data model.** One `entities` table holds every content item as JSONB (`department`, `workflow`, `system`, `equipment`, `glossary`, `note`, `source`). Items reference each other by id, never by copying text — a system supports many workflows, a term appears in many steps, an image supports many items. Workflow steps and connections live inside the workflow document. `entity_versions` keeps every revision; `images` stores compressed reference images. Migrations are idempotent and run automatically.
 

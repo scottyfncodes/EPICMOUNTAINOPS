@@ -76,9 +76,10 @@ function OpsNodeView({ data, selected }: NodeProps<OpsRFNode>) {
     selected ? 'is-selected' : '',
     faded ? 'is-dimmed' : '',
     lens.tone ? `tone--${lens.tone}` : '',
+    node.critical ? 'is-critical' : '',
   ].join(' ')
   const style = { width: size.w, minHeight: size.h, ...(linkAccent ? { '--link-accent': linkAccent } : {}) } as React.CSSProperties
-  const label = `${NODE_META[k].label} ${index}: ${node.label}${statusInherited ? '' : `, ${status}`}`
+  const label = `${NODE_META[k].label} ${index}: ${node.label}${node.critical ? ', safety-critical' : ''}${statusInherited ? '' : `, ${status}`}`
   const crop = selected ? <span className="crop" aria-hidden="true" /> : null
   const badge = lens.badge ? <span className="opsnode__lensbadge">{lens.badge}</span> : null
 
@@ -115,7 +116,7 @@ function OpsNodeView({ data, selected }: NodeProps<OpsRFNode>) {
       <div className="opsnode__head">
         <span className="opsnode__num">{String(index).padStart(2, '0')}</span>
         <span className="opsnode__kind">
-          {k === 'warning' && <Icon name="warning" size={12} />}
+          {(k === 'warning' || node.critical) && <Icon name="warning" size={12} />}
           {k === 'link' && <Icon name="arrowRight" size={12} />}
           {(k === 'decision' || k === 'unknown') && <span className="opsnode__q">?</span>}
           {NODE_META[k].label}
@@ -133,12 +134,18 @@ function OpsNodeView({ data, selected }: NodeProps<OpsRFNode>) {
           {linkCode && <span className="mono">{linkCode}</span>} {linkTitle || <em>Choose a destination</em>}
         </div>
       )}
-      {(sys > 0 || imgs > 0 || noteCount > 0 || badge) && (
+      {(sys > 0 || imgs > 0 || noteCount > 0 || badge || (node.callouts?.length || 0) > 0) && (
         <div className="opsnode__meta">
           {sys > 0 && (
             <span title={`${sys} systems & equipment`}>
               <Icon name="system" size={12} />
               {sys}
+            </span>
+          )}
+          {(node.callouts?.length || 0) > 0 && (
+            <span title={`${node.callouts!.length} tips & notes`} className="is-tip">
+              <Icon name="eye" size={12} />
+              {node.callouts!.length}
             </span>
           )}
           {imgs > 0 && (
